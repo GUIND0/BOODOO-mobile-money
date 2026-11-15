@@ -1,0 +1,19 @@
+services:
+  ussd-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ussd_db
+      POSTGRES_USER: ussd_user
+      POSTGRES_PASSWORD: ${USSD_DB_PASSWORD:?Set USSD_DB_PASSWORD before starting PostgreSQL}
+    ports:
+      - "127.0.0.1:5445:5432"
+    volumes:
+      - ussd_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  ussd_postgres_data:
