@@ -10,10 +10,10 @@
         <relativePath/>
     </parent>
     <groupId>com.paymentplatform</groupId>
-    <artifactId>agent-service</artifactId>
+    <artifactId>distribution-service</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>agent-service</name>
-    <description>Agent onboarding and lifecycle service for BOODOO</description>
+    <name>distribution-service</name>
+    <description>Distribution network onboarding and lifecycle service for BOODOO</description>
     <properties>
         <java.version>25</java.version>
     </properties>

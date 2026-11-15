@@ -1,4 +1,4 @@
-package com.paymentplatform.agent_service;
+package com.paymentplatform.distribution_service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class AgentServiceApplicationTests {
+class DistributionServiceApplicationTests {
 
     @Container
     @ServiceConnection
