@@ -1,0 +1,19 @@
+services:
+  transfer-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: transfer_db
+      POSTGRES_USER: transfer_user
+      POSTGRES_PASSWORD: ${TRANSFER_DB_PASSWORD:?Set TRANSFER_DB_PASSWORD before starting PostgreSQL}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - transfer_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  transfer_postgres_data:
