@@ -1,0 +1,19 @@
+services:
+  support-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: support_db
+      POSTGRES_USER: support_user
+      POSTGRES_PASSWORD: ${SUPPORT_DB_PASSWORD:?Set SUPPORT_DB_PASSWORD before starting PostgreSQL}
+    ports:
+      - "127.0.0.1:5444:5432"
+    volumes:
+      - support_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  support_postgres_data:
