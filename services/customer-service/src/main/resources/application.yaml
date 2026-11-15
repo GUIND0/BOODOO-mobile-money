@@ -6,10 +6,9 @@ spring:
     username: ${CUSTOMER_DB_USER:customer_user}
     password: ${CUSTOMER_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   flyway:
     enabled: true
 
@@ -24,3 +23,9 @@ management:
   endpoint:
     health:
       show-details: never
+
+boodoo:
+  security:
+    issuer: ${CUSTOMER_JWT_ISSUER_URI}
+    jwk-set-uri: ${CUSTOMER_JWT_JWK_SET_URI}
+    audience: ${CUSTOMER_JWT_AUDIENCE:boodoo-customer-api}
