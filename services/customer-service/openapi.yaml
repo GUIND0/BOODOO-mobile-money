@@ -1,0 +1,137 @@
+openapi: 3.1.0
+info:
+  title: BOODOO Customer API
+  version: 0.1.0
+  description: Partner-scoped customer creation. No OTP, PIN, wallet creation, or KYC approval.
+paths:
+  /v1/customers:
+    post:
+      operationId: createCustomer
+      summary: Create a minimal customer with pending KYC
+      description: >-
+        Requires customers:write and a trusted integrator_id claim. Keys, external references,
+        and phone numbers are unique within the integrator. A same-key replay with identical
+        normalized fields returns the original 201 response; a different payload conflicts.
+        Leading/trailing whitespace is stripped before validation and fingerprinting.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomer'
+      responses:
+        '201':
+          description: Customer created, or original creation replayed
+          headers:
+            Idempotency-Replayed:
+              description: True for an existing creation result
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          description: Invalid request or idempotency key
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Missing or invalid bearer identity or required partner claims
+        '403':
+          description: Valid identity lacks customers:write
+        '409':
+          description: CUSTOMER_ALREADY_EXISTS or IDEMPOTENCY_CONFLICT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: Unsupported request content type
+        '503':
+          description: Storage unavailable; retry the same profile with the same key
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  securitySchemes:
+    partnerBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        RS256 token from the configured issuer, for the configured audience, with exp,
+        integrator_id and scope customers:write. The issuer assigns the partner identity.
+  schemas:
+    CreateCustomer:
+      type: object
+      additionalProperties: false
+      required: [externalReference, firstName, lastName, phoneNumber]
+      properties:
+        externalReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Integrator customer reference; case-sensitive and not whitespace-only
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        phoneNumber:
+          type: string
+          pattern: '^\+[1-9][0-9]{1,14}$'
+          description: International format; ownership verification belongs to the integrator
+    Customer:
+      type: object
+      additionalProperties: false
+      required: [id, externalReference, firstName, lastName, phoneNumber, kycStatus, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        externalReference:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phoneNumber:
+          type: string
+        kycStatus:
+          type: string
+          const: PENDING
+        createdAt:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      required: [type, title, status, detail, code]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          enum: [INVALID_REQUEST, CUSTOMER_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, CUSTOMER_CREATION_UNAVAILABLE, UNSUPPORTED_MEDIA_TYPE]
