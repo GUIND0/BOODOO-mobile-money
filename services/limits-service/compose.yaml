@@ -1,0 +1,19 @@
+services:
+  limits-postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: limits_db
+      POSTGRES_USER: limits_user
+      POSTGRES_PASSWORD: ${LIMITS_DB_PASSWORD:?Set LIMITS_DB_PASSWORD before starting PostgreSQL}
+    ports:
+      - "127.0.0.1:5440:5432"
+    volumes:
+      - limits_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  limits_postgres_data:
