@@ -39,7 +39,7 @@ Required token claims:
 - `integrator_id`: a stable partner identifier matching `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
 - `scope`: includes `customers:write`.
 
-Only `GET /actuator/health` is public. Only authorized `POST /v1/customers` requests reach business code; other endpoints remain denied. Sessions, form login, HTTP Basic, generated development users, and logout are disabled. CSRF is disabled for this stateless bearer-token API, which does not accept cookie authentication. No token issuer or development signing key is supplied.
+Only `GET /actuator/health` is public. Authorized `POST /v1/customers` and scoped internal ownership requests reach business code; other endpoints remain denied. Sessions, form login, HTTP Basic, generated development users, and logout are disabled. CSRF is disabled for this stateless bearer-token API, which does not accept cookie authentication. No token issuer or development signing key is supplied.
 
 See [Spring Security resource-server JWT validation](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html) and [OWASP partner isolation guidance](https://cheatsheetseries.owasp.org/cheatsheets/Multi_Tenant_Security_Cheat_Sheet.html).
 
@@ -59,7 +59,7 @@ The profile above is illustrative test data. All four fields are required. Exter
 
 The caller cannot supply `id`, `integratorId`, `kycStatus`, `phoneVerified`, or `pin`. Unknown properties are rejected. Integrator ownership comes solely from the validated token, never from a submitted header or body field.
 
-Success: `201 Created`, with `Idempotency-Replayed: false` on first creation and `true` on replay. The response contains `id` (UUID), `externalReference`, `firstName`, `lastName`, `phoneNumber`, `kycStatus: PENDING`, and `createdAt` (UTC timestamp). No GET, profile update, or KYC-submission endpoint is implemented in this change.
+Success: `201 Created`, with `Idempotency-Replayed: false` on first creation and `true` on replay. The response contains `id` (UUID), `externalReference`, `firstName`, `lastName`, `phoneNumber`, `kycStatus: PENDING`, and `createdAt` (UTC timestamp). No public profile GET, profile update, or KYC-submission endpoint is implemented.
 
 ## Duplicates and idempotency
 
@@ -95,3 +95,9 @@ Application validation/conflict/database errors use `application/problem+json` w
 Tests run against real PostgreSQL 17 through Testcontainers and use an in-process JWK endpoint with ephemeral RSA keys. They verify migration, signed-token validation, partner isolation, validation, duplicate detection, normalized replay, immutable response snapshots, concurrent requests, and rollback/retry after an injected persistence failure. No production identity provider, SMS provider, credentials, or real customer data are used.
 
 PIN setup, profile enrichment, KYC submission/review, audit-event integration, and Gateway routing will be delivered separately.
+
+## Internal ownership contract
+
+`GET /internal/v1/customers/{customerId}/ownership` requires a valid customer-audience token with scope `customers:ownership:read`. It derives the integrator from the validated token, returning `204` with an empty body only when that customer belongs to the integrator. Unknown and foreign customers both return empty `404` responses. It exposes no profile data and does not change KYC status.
+
+Identity Service uses this endpoint before transaction-PIN setup. Its caller token must be intended for both APIs and contain the ownership-read scope in addition to `pins:create`; Identity relays that token to Customer Service instead of sharing database access or accepting a tenant header. The trusted authorization server must provision these permissions. This endpoint grants no customer-update or PIN-management permission by itself.

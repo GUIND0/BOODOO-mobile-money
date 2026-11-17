@@ -286,6 +286,39 @@ class CustomerServiceApplicationTests {
         assertCounts(1);
     }
 
+    @Test
+    void confirmsOwnershipWithoutDisclosingProfileAndKeepsKycPending() throws Exception {
+        var created = post(PROFILE, "ownership", token("partner-a"));
+        UUID customer = UUID.fromString(json.readTree(created.body()).get("id").asString());
+        String allowed = signedToken(SIGNING_KEY, ISSUER, AUDIENCE, "partner-a", "customers:ownership:read", Instant.now().plusSeconds(300));
+        var response = ownership(customer, allowed);
+        assertThat(response.statusCode()).isEqualTo(204);
+        assertThat(response.body()).isEmpty();
+        assertThat(ownership(UUID.randomUUID(), allowed).statusCode()).isEqualTo(404);
+        assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers", String.class)).isEqualTo("PENDING");
+    }
+
+    @Test
+    void ownershipLookupDoesNotRevealAnotherIntegratorsCustomer() throws Exception {
+        var created = post(PROFILE, "ownership", token("partner-a"));
+        UUID customer = UUID.fromString(json.readTree(created.body()).get("id").asString());
+        String foreign = signedToken(SIGNING_KEY, ISSUER, AUDIENCE, "partner-b", "customers:ownership:read", Instant.now().plusSeconds(300));
+        assertThat(ownership(customer, foreign).statusCode()).isEqualTo(404);
+        assertThat(ownership(customer, foreign).body()).isEmpty();
+    }
+
+    @Test
+    void ownershipLookupRequiresItsOwnScope() throws Exception {
+        assertThat(ownership(UUID.randomUUID(), null).statusCode()).isEqualTo(401);
+        assertThat(ownership(UUID.randomUUID(), token("partner-a")).statusCode()).isEqualTo(403);
+    }
+
+    private HttpResponse<String> ownership(UUID customer, String token) throws Exception {
+        var request = HttpRequest.newBuilder(uri("/internal/v1/customers/" + customer + "/ownership")).GET();
+        if (token != null) request.header("Authorization", "Bearer " + token);
+        return HTTP.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     private void assertCounts(int expected) {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM customers", Integer.class)).isEqualTo(expected);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM customer_creation_requests", Integer.class)).isEqualTo(expected);

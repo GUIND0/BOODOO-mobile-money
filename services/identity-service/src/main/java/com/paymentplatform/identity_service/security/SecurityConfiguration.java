@@ -1,29 +1,57 @@
 package com.paymentplatform.identity_service.security;
 
+import com.paymentplatform.identity_service.customer.CustomerClientProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+
+import java.util.List;
+import java.util.regex.Pattern;
 
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties({IdentitySecurityProperties.class, PinProtectionProperties.class, CustomerClientProperties.class})
 public class SecurityConfiguration {
+    private static final Pattern INTEGRATOR = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_-]{0,63}");
+
+    @Bean
+    JwtDecoder jwtDecoder(IdentitySecurityProperties properties) {
+        var decoder = NimbusJwtDecoder.withJwkSetUri(properties.jwkSetUri()).build();
+        OAuth2TokenValidator<Jwt> claims = jwt -> {
+            Object integrator = jwt.getClaims().get("integrator_id");
+            boolean valid = integrator instanceof String id && INTEGRATOR.matcher(id).matches()
+                    && jwt.getExpiresAt() != null && jwt.getAudience() != null
+                    && jwt.getAudience().containsAll(List.of(properties.audience(), properties.customerAudience()));
+            return valid ? OAuth2TokenValidatorResult.success() : OAuth2TokenValidatorResult.failure(
+                    new OAuth2Error("invalid_token", "Required partner claims are missing or invalid", null));
+        };
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(properties.issuer()), claims));
+        return decoder;
+    }
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        return http
+        return http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(requests -> requests
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/v1/customers/*/pin").hasAuthority("SCOPE_pins:create")
                         .anyRequest().denyAll())
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .requestCache(cache -> cache.disable())
-                .formLogin(form -> form.disable())
-                .httpBasic(basic -> basic.disable())
-                .logout(logout -> logout.disable())
-                .exceptionHandling(errors -> errors
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-                .build();
+                .requestCache(cache -> cache.disable()).formLogin(form -> form.disable())
+                .httpBasic(basic -> basic.disable()).logout(logout -> logout.disable())
+                .oauth2ResourceServer(resource -> resource.jwt(Customizer.withDefaults())).build();
     }
 }
