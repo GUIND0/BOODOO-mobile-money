@@ -6,10 +6,9 @@ spring:
     username: ${IDENTITY_DB_USER:identity_user}
     password: ${IDENTITY_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   flyway:
     enabled: true
 
@@ -24,3 +23,15 @@ management:
   endpoint:
     health:
       show-details: never
+
+boodoo:
+  security:
+    issuer: ${IDENTITY_JWT_ISSUER_URI}
+    jwk-set-uri: ${IDENTITY_JWT_JWK_SET_URI}
+    audience: ${IDENTITY_JWT_AUDIENCE:boodoo-identity-api}
+    customer-audience: ${IDENTITY_CUSTOMER_AUDIENCE:boodoo-customer-api}
+  customers:
+    base-url: ${IDENTITY_CUSTOMER_BASE_URL:http://127.0.0.1:8084}
+  pin:
+    pepper: ${IDENTITY_PIN_PEPPER}
+    pepper-version: ${IDENTITY_PIN_PEPPER_VERSION:v1}

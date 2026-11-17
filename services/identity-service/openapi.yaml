@@ -1,0 +1,135 @@
+openapi: 3.1.0
+info:
+  title: BOODOO Transaction PIN API
+  version: 0.1.0
+  description: First PIN setup only. No OTP, PIN verification/change/recovery, or KYC approval.
+paths:
+  /v1/customers/{customerId}/pin:
+    post:
+      operationId: createCustomerPin
+      summary: Create the customer's first transaction PIN
+      description: >-
+        Requires pins:create and customers:ownership:read, a trusted integrator_id, and
+        audiences for Identity and Customer Services. Customer ownership is checked through
+        Customer Service, including on replay. Ten confirmed-ownership setup attempts per
+        integrator/customer per 15-minute window include replays and conflicts.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pin]
+              properties:
+                pin:
+                  type: string
+                  writeOnly: true
+                  pattern: '^[0-9]{6}$'
+                  description: >-
+                    Six ASCII digits, preserving leading zeros. Repeated digits and ascending
+                    or descending sequences, including wraparound, are rejected.
+                  example: '739152'
+      responses:
+        '201':
+          description: First PIN created or original creation replayed; never returns the PIN
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinCreation'
+        '400':
+          description: Invalid UUID, PIN, fields or idempotency key
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Bearer identity, issuer, expiration, partner claim or audiences invalid
+        '403':
+          description: Required PIN or ownership permission missing
+        '404':
+          description: Customer missing or not owned by this integrator
+        '409':
+          description: PIN_ALREADY_EXISTS or IDEMPOTENCY_CONFLICT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '415':
+          description: Use Content-Type application/json
+        '429':
+          description: PIN_SETUP_RATE_LIMITED
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                const: 900
+        '503':
+          description: OWNERSHIP_UNAVAILABLE, PIN_CREATION_UNAVAILABLE or PIN_KEY_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  securitySchemes:
+    partnerBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        RS256 token from the trusted issuer, with integrator_id, exp, both intended service
+        audiences, and scopes pins:create and customers:ownership:read. The token is relayed
+        only to the configured Customer Service ownership endpoint; no PIN is forwarded.
+  schemas:
+    PinCreation:
+      type: object
+      additionalProperties: false
+      required: [customerId, status, createdAt]
+      properties:
+        customerId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: CREATED
+        createdAt:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      required: [type, title, status, detail, code]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          enum: [INVALID_REQUEST, UNSUPPORTED_MEDIA_TYPE, CUSTOMER_NOT_FOUND, OWNERSHIP_FORBIDDEN,
+                 OWNERSHIP_UNAVAILABLE, PIN_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, PIN_SETUP_RATE_LIMITED,
+                 PIN_CREATION_UNAVAILABLE, PIN_KEY_UNAVAILABLE]

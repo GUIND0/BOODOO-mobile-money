@@ -18,6 +18,12 @@ public class CustomerRepository {
         this.jdbc = jdbc;
     }
 
+    public boolean belongsTo(String integrator, UUID customerId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM customers WHERE id = ? AND integrator_id = ?)",
+                Boolean.class, customerId, integrator));
+    }
+
     public void lockCreation(String integrator, String key) {
         // Length-prefix the tenant so different tenant/key pairs cannot share an ambiguous lock name.
         String lockName = integrator.length() + ":" + integrator + key;

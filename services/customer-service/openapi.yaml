@@ -64,6 +64,29 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /internal/v1/customers/{customerId}/ownership:
+    get:
+      operationId: checkCustomerOwnership
+      summary: Confirm that a customer belongs to the authenticated integrator
+      description: Requires customers:ownership:read; returns no profile data or KYC changes.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Customer belongs to the authenticated integrator; empty response
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing customers:ownership:read scope
+        '404':
+          description: Customer missing or foreign; empty response
 components:
   securitySchemes:
     partnerBearer:
