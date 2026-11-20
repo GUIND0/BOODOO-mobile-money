@@ -1,5 +1,6 @@
 package com.paymentplatform.identity_service.api;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -27,7 +28,7 @@ public class PinExceptionHandler {
             MethodArgumentTypeMismatchException.class})
     ProblemDetail invalid(Exception error) {
         return problem(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",
-                "Provide a customer UUID, a valid Idempotency-Key, and a non-trivial six-digit PIN as a JSON string.");
+                "Provide a valid customer UUID, a six-digit PIN string and the headers required by this endpoint.");
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
@@ -36,7 +37,11 @@ public class PinExceptionHandler {
     }
 
     @ExceptionHandler(DataAccessException.class)
-    ProblemDetail unavailable(DataAccessException error) {
+    ProblemDetail unavailable(DataAccessException error, HttpServletRequest request) {
+        if (request.getRequestURI().endsWith("/pin/verify")) {
+            return problem(HttpStatus.SERVICE_UNAVAILABLE, "PIN_VERIFICATION_UNAVAILABLE",
+                    "PIN verification is temporarily unavailable. Retry later.");
+        }
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "PIN_CREATION_UNAVAILABLE",
                 "PIN creation is temporarily unavailable. Retry the same request with the same Idempotency-Key.");
     }

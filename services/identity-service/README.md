@@ -1,8 +1,8 @@
-# Identity Service — transaction PIN creation
+# Identity Service — transaction PIN APIs
 
 Identity Service exposes transaction-credential APIs for BOODOO integrations. `POST /v1/customers/{customerId}/pin` sets the first transaction PIN for an existing customer owned by the authenticated integrator. End-user login, OTP delivery/verification and user consent remain with the integrating application.
 
-This change does not implement PIN verification, PIN change, PIN recovery, token issuance, wallets, or KYC approval. Creating a PIN does not change the customer's KYC status.
+The service supports first PIN setup and PIN verification. PIN change/recovery, token issuance, wallets and KYC approval remain separate work. Neither PIN operation changes the customer's KYC status.
 
 ## Run locally
 
@@ -32,9 +32,10 @@ The incoming RS256 JWT must be issued by the trusted authorization server config
 - `integrator_id`: `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`, assigned by trusted partner provisioning.
 - `aud`: includes `boodoo-identity-api` and `boodoo-customer-api` by default. Override with `IDENTITY_JWT_AUDIENCE` and `IDENTITY_CUSTOMER_AUDIENCE` when configuring the corresponding resources.
 - `exp`: required. Standard Spring Security clock skew applies.
-- `scope`: includes `pins:create` and `customers:ownership:read`.
+- Setup scope: `pins:create` plus `customers:ownership:read`.
+- Verification scope: `pins:verify` plus `customers:ownership:read`.
 
-Identity requires `pins:create` at the API boundary. It relays the caller's bearer token to the fixed configured Customer Service origin for `GET /internal/v1/customers/{customerId}/ownership`. Customer Service independently validates its token audience, issuer and ownership-read scope, then derives the integrator from the token and checks the customer in its own database. No tenant header, query parameter, customer profile or PIN is forwarded.
+Identity requires `pins:create` for setup and `pins:verify` for verification at the API boundary. It relays the caller's bearer token to the fixed configured Customer Service origin for `GET /internal/v1/customers/{customerId}/ownership`. Customer Service independently validates its token audience, issuer and ownership-read scope, then derives the integrator from the token and checks the customer in its own database. No tenant header, query parameter, customer profile or PIN is forwarded.
 
 The ownership endpoint returns `204` only for the caller's own customer, otherwise `404`, without profile data. Missing ownership scope returns `403`. Identity refuses to create a PIN if ownership cannot be confirmed, including dependency timeouts and redirects. Connect timeout is 2 seconds; the ownership request has a 3-second deadline. Ownership is rechecked on retries too. Customer-to-integrator ownership is an immutable boundary in the current customer APIs.
 
@@ -73,7 +74,7 @@ The hashing and pepper approach follows [OWASP storage guidance](https://cheatsh
 
 ## Attempt limits
 
-An authenticated, validated request with confirmed customer ownership consumes one setup attempt before creation or replay. PostgreSQL atomically limits each integrator/customer pair to **10 attempts in a 15-minute window**, including correct replays and conflicting retries. This bounds guesses against idempotency fingerprints. It is separate from future PIN-verification limits and from Gateway traffic controls.
+An authenticated, validated request with confirmed customer ownership consumes one setup attempt before creation or replay. PostgreSQL atomically limits each integrator/customer pair to **10 attempts in a 15-minute window**, including correct replays and conflicting retries. Sensitive creation replays additionally participate in the shared comparison/lockout policy below, so switching endpoints cannot bypass it. Gateway traffic controls remain separate.
 
 The attempt budget commits independently, so a later conflict or persistence failure cannot roll it back. `429 PIN_SETUP_RATE_LIMITED` includes `Retry-After: 900`. The window resets when the next accepted request arrives after expiry. Budget rows currently have no automatic cleanup. Dependency failures before ownership confirmation do not consume a PIN-setup attempt.
 
@@ -99,3 +100,38 @@ Application errors use `application/problem+json` with a stable `code`, without 
 ```
 
 Integration tests use real PostgreSQL 17, ephemeral RSA signing keys and an HTTP Customer Service contract fixture. They cover actual signed-token validation, ownership refusal, token relay, Argon2id/HMAC storage, leading-zero preservation, redaction, request validation, idempotency, no-overwrite behavior, concurrency, rate limiting, dependency failures and transaction rollback. Customer Service has separate real-database tests for the ownership endpoint and tenant isolation.
+
+## Verify a transaction PIN
+
+```sh
+curl --request POST "http://127.0.0.1:8086/v1/customers/${CUSTOMER_ID}/pin/verify" \
+  --header "Authorization: Bearer ${PARTNER_ACCESS_TOKEN}" \
+  --header 'Content-Type: application/json' \
+  --data '{"pin":"739152"}'
+```
+
+The token needs `pins:verify`, `customers:ownership:read`, and the same two intended audiences as setup. The request accepts exactly six ASCII digits as a JSON string, preserving leading zeros. It does not reapply creation strength rules: any syntactically valid six-digit guess is compared and accounted for. Unknown fields, numeric JSON values and whitespace are rejected. No idempotency key is required or used to deduplicate verification attempts.
+
+A valid PIN returns **204 No Content** with `Cache-Control: no-store`, without credential data, tokens or sessions. A wrong PIN returns **422 PIN_INVALID**, until lockout applies. Missing PIN configuration for an owned customer returns **404 PIN_NOT_CONFIGURED**. Foreign and unknown customers still receive **404 CUSTOMER_NOT_FOUND** through the ownership boundary. Stored pepper-version mismatch returns **503 PIN_KEY_UNAVAILABLE**, without treating it as a wrong PIN. Storage failure returns **503 PIN_VERIFICATION_UNAVAILABLE**, without disclosing PIN correctness or database diagnostics.
+
+This endpoint confirms the supplied PIN only at the time of the call. Its 204 response is not a reusable payment authorization or a proof bound to a particular transaction. Transaction-specific authorization and server-side enforcement will be designed with the financial workflows, following [OWASP transaction authorization guidance](https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html).
+
+### Shared comparison and lockout policy
+
+- Every call rechecks customer ownership before accessing credentials, including while locally locked. Ownership failures do not compare a PIN or reset failed attempts.
+- A successful comparison resets the consecutive-failure counter. **Five consecutive failed comparisons** set a **15-minute lock**, including the fifth failure. While locked, even a correct PIN returns **429 PIN_VERIFICATION_LOCKED**, and no comparison is performed. Lock expiry resets the failure counter on the next comparison.
+- Consecutive failures persist across rate-window boundaries until success or lock expiry. The limit is not scoped to an HTTP connection, a bearer-token instance or an idempotency key.
+- At most **30 completed comparisons per integrator/customer per 15-minute window** are allowed, including successful verification and sensitive creation replays. Exhaustion returns **429 PIN_VERIFICATION_RATE_LIMITED**. This limits hashing work even for repeated correct submissions.
+- Both 429 codes include the conservative `Retry-After: 900`; the actual remaining window may be shorter. Waiting or token refresh does not reset persisted counters early.
+- Creation replay with the original customer/key also compares a PIN via the keyed request fingerprint. These comparisons use the same counters and lockout as verification. A mismatch returns its existing 409 code before the fifth failure, then the shared 429 lock. Changing to a different setup key never replaces a PIN or tests whether it matches.
+- PostgreSQL stores the state and serializes comparisons across application instances. The database clock controls expiry. A matching verification never changes or rehashes the stored credential.
+- Verification business failures commit counters; they are not rolled back by 422/409/429 responses. Creation replays join the same connection/transaction, and their outer transaction also commits these business failures. SQL/infrastructure failures roll back their state updates and never report a successful comparison. Following a lost response or storage error, do not infer that no attempt was consumed.
+- The earlier setup-request budget remains independent and still applies. Shared comparison-state rows currently have no automatic cleanup. All Identity replicas must use this version to enforce the same cross-endpoint policy.
+
+The policy follows the principles of [OWASP authentication throttling and account lockout](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html). Production Gateway controls should additionally constrain total traffic per integrating application.
+
+### Upgrade and verification coverage
+
+Flyway applies `V2__pin_verification_state.sql` after the unchanged V1 schema; no credential or secret migration is required. Existing pepper and issuer configuration stay unchanged. Provision the new `pins:verify` scope only to appropriate integration clients. PIN creation still requires its separate scope.
+
+Tests cover verification success/failure, leading zeros, secret redaction, JWT/scopes, ownership loss, missing credentials/keys, persisted failure counters, successful reset, lock expiry, rate-window expiry, shared creation/verification lockout, concurrent comparisons, and storage rollback. The suite uses a two-connection pool and exercises concurrent creation replays across different customers to catch nested-transaction pool starvation.

@@ -30,6 +30,11 @@ public class PinProtector {
         return encoder.encode(input);
     }
 
+    public boolean matches(String integrator, UUID customer, String pin, String hash) {
+        String input = Base64.getEncoder().encodeToString(hmac("boodoo-pin-storage-v1", integrator, customer.toString(), pin));
+        return encoder.matches(input, hash);
+    }
+
     public String fingerprint(String integrator, UUID customer, String pin) {
         return HexFormat.of().formatHex(hmac("boodoo-pin-idempotency-v1", integrator, customer.toString(), pin));
     }
