@@ -1,0 +1,107 @@
+openapi: 3.1.0
+info:
+  title: BOODOO Wallet Provisioning API
+  version: 0.1.0
+  description: Pending XOF wallet metadata only. No balance, ledger posting, financial activation, funding, transfers or OTP.
+paths:
+  /v1/wallets:
+    post:
+      operationId: createPendingWallet
+      summary: Provision an owned customer's pending XOF wallet
+      description: >-
+        Requires wallets:write and customers:ownership:read with both service audiences.
+        Tenant derives from signed JWT claims. Ownership is checked on each request, including replay.
+        Currency is trimmed and uppercased. Same-key canonical replay returns the original snapshot;
+        differing payload reuse conflicts. A new key for an existing customer/currency conflicts.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [customerId, currency]
+              properties:
+                customerId: {type: string, format: uuid}
+                currency:
+                  type: string
+                  description: Only XOF after trimming and uppercasing
+                  examples: [XOF, xof]
+      responses:
+        '201':
+          description: Pending wallet created or original creation replayed; Cache-Control no-store
+          headers:
+            Location:
+              description: Relative metadata resource URI
+              schema: {type: string, format: uri-reference}
+            Idempotency-Replayed:
+              schema: {type: boolean}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Wallet'}
+        '400':
+          description: INVALID_REQUEST or UNSUPPORTED_CURRENCY
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        '401': {description: Missing or invalid bearer identity or required audiences}
+        '403': {description: Missing write scope or customer ownership permission}
+        '404': {description: Unknown or foreign customer}
+        '409': {description: IDEMPOTENCY_CONFLICT or WALLET_ALREADY_EXISTS}
+        '415': {description: Unsupported request content type}
+        '503': {description: Ownership or storage unavailable; retry with the same key}
+  /v1/wallets/{walletId}:
+    get:
+      operationId: getPendingWallet
+      summary: Read wallet metadata after a fresh ownership check
+      description: Requires wallets:read and customers:ownership:read with both service audiences. No financial eligibility is inferred.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: walletId
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Tenant-scoped wallet metadata, Cache-Control no-store
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Wallet'}
+        '400': {description: Invalid wallet UUID}
+        '401': {description: Missing or invalid bearer identity or required audiences}
+        '403': {description: Missing read scope or customer ownership permission}
+        '404': {description: Unknown or foreign wallet or customer}
+        '503': {description: Ownership or storage unavailable; metadata is not returned}
+components:
+  securitySchemes:
+    partnerBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Wallet:
+      type: object
+      additionalProperties: false
+      required: [id, customerId, currency, status, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        customerId: {type: string, format: uuid}
+        currency: {type: string, enum: [XOF]}
+        status: {type: string, enum: [PENDING]}
+        createdAt: {type: string, format: date-time}
+    Problem:
+      type: object
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        code: {type: string}
