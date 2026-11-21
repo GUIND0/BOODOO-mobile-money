@@ -28,7 +28,7 @@ public class PinExceptionHandler {
             MethodArgumentTypeMismatchException.class})
     ProblemDetail invalid(Exception error) {
         return problem(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",
-                "Provide a valid customer UUID, a six-digit PIN string and the headers required by this endpoint.");
+                "Provide valid identifiers, request fields and the headers required by this endpoint.");
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
@@ -38,6 +38,9 @@ public class PinExceptionHandler {
 
     @ExceptionHandler(DataAccessException.class)
     ProblemDetail unavailable(DataAccessException error, HttpServletRequest request) {
+        if (request.getMethod().equals("GET")) {
+            return problem(HttpStatus.SERVICE_UNAVAILABLE, "PIN_STATUS_UNAVAILABLE", "PIN configuration status is temporarily unavailable.");
+        }
         if (request.getRequestURI().endsWith("/pin/verify")) {
             return problem(HttpStatus.SERVICE_UNAVAILABLE, "PIN_VERIFICATION_UNAVAILABLE",
                     "PIN verification is temporarily unavailable. Retry later.");

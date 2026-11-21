@@ -648,6 +648,55 @@ class IdentityServiceApplicationTests {
         }
     }
 
+    private String statusToken(String partner) throws Exception {
+        return signed(KEY,ISSUER,audiences(),partner,"pins:read customers:ownership:read",Instant.now().plusSeconds(300));
+    }
+    private HttpResponse<String> pinStatus(UUID customer,String bearer) throws Exception {
+        var builder=HttpRequest.newBuilder(uri("/v1/customers/"+customer+"/pin")).GET().header("X-Integrator-Id","partner-b");
+        if(bearer!=null)builder.header("Authorization","Bearer "+bearer);
+        return HTTP.send(builder.build(),HttpResponse.BodyHandlers.ofString());
+    }
+    @Test void statusReportsOnlyConfigurationWithoutComparingOrChangingCounters() throws Exception {
+        String auth=statusToken("partner-a");
+        var absent=pinStatus(CUSTOMER,auth);assertThat(absent.statusCode()).isEqualTo(200);
+        assertThat(json.readTree(absent.body()).get("configured").asBoolean()).isFalse();
+        seedPin();
+        var configured=pinStatus(CUSTOMER,auth);assertThat(configured.statusCode()).isEqualTo(200);
+        var body=json.readTree(configured.body());assertThat(body.size()).isEqualTo(2);
+        assertThat(body.get("configured").asBoolean()).isTrue();
+        assertThat(body.get("customerId").asString()).isEqualTo(CUSTOMER.toString());
+        assertThat(configured.headers().firstValue("Cache-Control")).contains("no-store");
+        assertThat(configured.body()).doesNotContain("hash","pepper","locked","739152");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM pin_verification_state",Integer.class)).isZero();
+        assertThat(FORWARDED_TOKEN.get()).isEqualTo(auth);
+    }
+    @Test void statusRequiresReadScopeAndRemoteOwnershipIncludingForConfiguredPins() throws Exception {
+        seedPin();
+        assertThat(pinStatus(CUSTOMER,null).statusCode()).isEqualTo(401);
+        int calls=CUSTOMER_CALLS.get();
+        assertThat(pinStatus(CUSTOMER,token("partner-a")).statusCode()).isEqualTo(403);
+        assertThat(CUSTOMER_CALLS.get()).isEqualTo(calls);
+        assertError(pinStatus(CUSTOMER,statusToken("partner-b")),404,"CUSTOMER_NOT_FOUND");
+        assertError(pinStatus(UUID.randomUUID(),statusToken("partner-a")),404,"CUSTOMER_NOT_FOUND");
+        String noOwnership=signed(KEY,ISSUER,audiences(),"partner-a","pins:read",Instant.now().plusSeconds(300));
+        assertError(pinStatus(CUSTOMER,noOwnership),403,"OWNERSHIP_FORBIDDEN");
+    }
+    @Test void statusNeverConvertsUpstreamFailuresToAnUnconfiguredCredential() throws Exception {
+        for(int status:List.of(500,401,302)){
+            UPSTREAM_STATUS.set(status);
+            assertError(pinStatus(CUSTOMER,statusToken("partner-a")),503,"OWNERSHIP_UNAVAILABLE");
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM customer_pins",Integer.class)).isZero();
+    }
+    @Test void statusNeverConvertsDatabaseFailureToFalse() throws Exception {
+        jdbc.execute("ALTER TABLE customer_pins RENAME TO pins_temporarily_unavailable");
+        try {
+            var result=pinStatus(CUSTOMER,statusToken("partner-a"));
+            assertError(result,503,"PIN_STATUS_UNAVAILABLE");
+            assertThat(result.body()).doesNotContain("SELECT","SQLException","pins_temporarily_unavailable");
+        } finally { jdbc.execute("ALTER TABLE pins_temporarily_unavailable RENAME TO customer_pins"); }
+    }
+
     private void seedPin() throws Exception {
         assertThat(post(CUSTOMER, BODY, "verification-seed", token("partner-a")).statusCode()).isEqualTo(201);
     }

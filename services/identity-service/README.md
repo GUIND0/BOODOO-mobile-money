@@ -4,6 +4,12 @@ Identity Service exposes transaction-credential APIs for BOODOO integrations. `P
 
 The service supports first PIN setup and PIN verification. PIN change/recovery, token issuance, wallets and KYC approval remain separate work. Neither PIN operation changes the customer's KYC status.
 
+## Read PIN configuration status
+
+`GET /v1/customers/{customerId}/pin` requires `pins:read`, `customers:ownership:read` and both service audiences. Customer ownership is checked remotely on every read before local state is inspected. Success returns `200 {"customerId":"<uuid>","configured":true}` (false when the owned customer has no PIN), with `Cache-Control: no-store`. It reveals no hash, PIN value, timestamps, protection key version, lock state or comparison counters. It does not compare a PIN, consume comparison budgets, reset a lock or grant payment authorization. The integrating application must still obtain the appropriate end-user consent.
+
+Unknown/foreign customers both return 404. Missing read scope returns 403, missing ownership permission is rejected by Customer Service with 403, invalid UUID returns 400. Ownership dependency failure returns 503 OWNERSHIP_UNAVAILABLE; local storage failure returns 503 PIN_STATUS_UNAVAILABLE. Neither failure is converted into `configured:false`.
+
 ## Run locally
 
 Requirements: JDK 25 or later, a running Docker daemon, and the Customer Service version containing the ownership endpoint described below. Run commands from `services/identity-service`.

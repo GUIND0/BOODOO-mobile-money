@@ -47,6 +47,7 @@ public class SecurityConfiguration {
         return http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/customers/*/pin").hasAuthority("SCOPE_pins:read")
                         .requestMatchers(HttpMethod.POST, "/v1/customers/*/pin").hasAuthority("SCOPE_pins:create")
                         .requestMatchers(HttpMethod.POST, "/v1/customers/*/pin/verify").hasAuthority("SCOPE_pins:verify")
                         .anyRequest().denyAll())
