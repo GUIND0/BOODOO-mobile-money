@@ -4,6 +4,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 public final class CustomerActor {
     private CustomerActor() { }
+    public static String requireOperator(Jwt jwt) {
+        if(!"operator".equals(jwt.getClaims().get("actor_type")))
+            throw new CustomerOperationException(HttpStatus.FORBIDDEN,"OPERATOR_REQUIRED","An authenticated operator is required.");
+        return requireSubject(jwt);
+    }
     public static String requireSubject(Jwt jwt) {
         String subject=jwt.getSubject();
         if(subject==null || subject.isBlank() || subject.length()>128 || !subject.equals(subject.strip())

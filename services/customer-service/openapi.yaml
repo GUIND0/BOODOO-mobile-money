@@ -226,10 +226,56 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/KycSubmission'
+                $ref: '#/components/schemas/KycDossier'
         '401': {description: Invalid bearer identity}
         '403': {description: Requires kyc:read}
         '404': {description: Unknown, foreign or mismatched dossier}
+  /v1/customers/{customerId}/kyc-submissions/{submissionId}/decisions:
+    post:
+      operationId: reviewCustomerKyc
+      summary: Record an independent operator's final KYC review decision
+      description: >-
+        Requires kyc:review, signed actor_type operator and stable JWT sub different from the submitter.
+        Records an explicit review decision, not automatic identity verification or financial authorization.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema: {type: string, format: uuid}
+        - in: path
+          name: submissionId
+          required: true
+          schema: {type: string, format: uuid}
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [decision, reasonCode]
+              properties:
+                decision: {type: string, enum: [APPROVED, REJECTED]}
+                reasonCode: {type: string, pattern: '^[A-Z][A-Z0-9_]{0,63}$'}
+      responses:
+        '201':
+          description: Immutable decision recorded or original response replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycDecision'
+        '400': {description: Invalid UUID, body or key}
+        '401': {description: Invalid bearer identity}
+        '403': {description: Missing review scope/operator identity, or self review}
+        '404': {description: Missing or foreign customer or dossier}
+        '409': {description: Already decided, stale dossier, expired approval evidence or conflicting key}
+        '503': {description: Storage unavailable}
 components:
   securitySchemes:
     partnerBearer:
@@ -360,3 +406,37 @@ components:
             $ref: '#/components/schemas/KycDocument'
         submittedBy: {type: string}
         submittedAt: {type: string, format: date-time}
+
+    KycDecision:
+      type: object
+      additionalProperties: false
+      required: [id, customerId, submissionId, status, reasonCode, reviewedBy, reviewedAt]
+      properties:
+        id: {type: string, format: uuid}
+        customerId: {type: string, format: uuid}
+        submissionId: {type: string, format: uuid}
+        status: {type: string, enum: [APPROVED, REJECTED]}
+        reasonCode: {type: string}
+        reviewedBy: {type: string}
+        reviewedAt: {type: string, format: date-time}
+    KycDossier:
+      type: object
+      additionalProperties: false
+      required: [id, customerId, status, profileVersion, profile, documents, submittedBy, submittedAt, decision]
+      properties:
+        id: {type: string, format: uuid}
+        customerId: {type: string, format: uuid}
+        status: {type: string, enum: [UNDER_REVIEW, APPROVED, REJECTED]}
+        profileVersion: {type: integer}
+        profile:
+          $ref: '#/components/schemas/Profile'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/KycDocument'
+        submittedBy: {type: string}
+        submittedAt: {type: string, format: date-time}
+        decision:
+          anyOf:
+            - $ref: '#/components/schemas/KycDecision'
+            - type: 'null'
