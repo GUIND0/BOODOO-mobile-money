@@ -12,12 +12,7 @@ public class CustomerProfileService {
     public CustomerProfileService(CustomerRepository customers){this.customers=customers;}
     @Transactional(timeout=10)
     public CustomerProfileResponse update(String integrator,UUID id,String ifMatch,PatchCustomerRequest request,String actor){
-        if(ifMatch==null)throw error(HttpStatus.PRECONDITION_REQUIRED,"PRECONDITION_REQUIRED","Supply the current profile ETag in If-Match.");
-        long expected;
-        try {
-            if(!ifMatch.matches("\"[0-9]{1,19}\""))throw new IllegalArgumentException();
-            expected=Long.parseLong(ifMatch.substring(1,ifMatch.length()-1));
-        }catch(IllegalArgumentException e){throw error(HttpStatus.BAD_REQUEST,"INVALID_REQUEST","If-Match must be a quoted profile revision.");}
+        long expected=ProfileRevision.require(ifMatch);
         var old=customers.lockProfile(integrator,id).orElseThrow(()->error(HttpStatus.NOT_FOUND,"CUSTOMER_NOT_FOUND","Customer not found for this integrator."));
         if(old.version()!=expected)throw error(HttpStatus.PRECONDITION_FAILED,"PROFILE_VERSION_CONFLICT","The profile changed; read it again before updating.");
         if(!old.kycStatus().equals("PENDING") && !old.kycStatus().equals("REJECTED"))

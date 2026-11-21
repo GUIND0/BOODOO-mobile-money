@@ -46,6 +46,7 @@ class CustomerServiceApplicationTests {
     @Autowired JdbcTemplate jdbc;
     @Autowired ObjectMapper json;
     @LocalServerPort int port;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean java.time.Clock customerClock;
 
     @DynamicPropertySource
     static void securityProperties(DynamicPropertyRegistry registry) {
@@ -56,7 +57,9 @@ class CustomerServiceApplicationTests {
 
     @BeforeEach
     void clearCustomers() {
-        jdbc.execute("TRUNCATE customer_profile_updates, customer_creation_requests, customers");
+        org.mockito.Mockito.when(customerClock.instant()).thenAnswer(inv -> Instant.now());
+        org.mockito.Mockito.when(customerClock.getZone()).thenReturn(java.time.ZoneOffset.UTC);
+        jdbc.execute("TRUNCATE kyc_submission_requests, kyc_submissions, customer_profile_updates, customer_creation_requests, customers");
     }
 
     @AfterAll
@@ -64,7 +67,7 @@ class CustomerServiceApplicationTests {
 
     @Test
     void startsWithMigratedPostgresAndReportsHealthy() throws Exception {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(3);
         var response = HTTP.send(HttpRequest.newBuilder(uri("/actuator/health")).GET().build(), HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(json.readTree(response.body()).get("status").asString()).isEqualTo("UP");
@@ -450,6 +453,105 @@ class CustomerServiceApplicationTests {
         if(subject!=null)claims.subject(subject);if(actorType!=null)claims.claim("actor_type",actorType);
         var jwt=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("test-key").build(),claims.build());
         jwt.sign(new RSASSASigner(SIGNING_KEY));return jwt.serialize();
+    }
+
+    private static final String DOCUMENTS="{\"documents\":[{\"type\":\"NATIONAL_ID\",\"reference\":\"vault-document-1\",\"issuingCountry\":\"ML\",\"expiresOn\":\"2999-12-31\"}]}";
+
+    @Test
+    void submitsAndReadsImmutableKycSnapshotWithoutApprovingIt() throws Exception {
+        UUID id=completeProfileFixture();String auth=scopedToken("partner-a","kyc:submit kyc:read");
+        var response=submitKyc(id,DOCUMENTS,"kyc-one","\"1\"",auth);assertThat(response.statusCode()).isEqualTo(201);
+        UUID submission=UUID.fromString(json.readTree(response.body()).get("id").asString());
+        assertThat(json.readTree(response.body()).get("profile").get("dateOfBirth").asString()).isEqualTo("1990-01-02");
+        assertThat(json.readTree(response.body()).get("status").asString()).isEqualTo("UNDER_REVIEW");
+        assertThat(readKyc(id,submission,auth).statusCode()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers",String.class)).isEqualTo("UNDER_REVIEW");
+        assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isEqualTo(2);
+        assertThat(submitKyc(id,DOCUMENTS,"kyc-one","\"1\"",auth).body()).isEqualTo(response.body());
+        assertThat(patchProfile(id,"{\"city\":\"Changed\"}","\"2\"",token("partner-a")).statusCode()).isEqualTo(409);
+        assertThatThrownBy(()->jdbc.update("UPDATE kyc_submissions SET submitted_by='changed'")).isInstanceOf(org.springframework.dao.DataAccessException.class);
+    }
+
+    @Test
+    void kycRequiresCompleteProfileCurrentRevisionAndDedicatedPermissions() throws Exception {
+        UUID id=createProfileFixture();String auth=scopedToken("partner-a","kyc:submit");
+        assertThat(submitKyc(id,DOCUMENTS,"incomplete","\"0\"",auth).statusCode()).isEqualTo(409);
+        assertThat(submitKyc(id,DOCUMENTS,"missing",null,auth).statusCode()).isEqualTo(428);
+        assertThat(submitKyc(id,DOCUMENTS,"scope","\"0\"",token("partner-a")).statusCode()).isEqualTo(403);
+        assertThat(submitKyc(id,DOCUMENTS,"foreign","\"0\"",scopedToken("partner-b","kyc:submit")).statusCode()).isEqualTo(404);
+        assertThat(patchProfile(id,COMPLETE_PROFILE,"\"0\"",token("partner-a")).statusCode()).isEqualTo(200);
+        assertThat(submitKyc(id,DOCUMENTS,"stale","\"0\"",auth).statusCode()).isEqualTo(412);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_submissions",Integer.class)).isZero();
+    }
+
+    @Test
+    void kycRejectsInvalidEvidenceAndConflictingIdempotencyReuse() throws Exception {
+        UUID id=completeProfileFixture();String auth=scopedToken("partner-a","kyc:submit");
+        for(String body:List.of("{}","{\"documents\":[]}",DOCUMENTS.replace("vault-document-1","https://example.com/document"),
+                DOCUMENTS.replace("NATIONAL_ID","UNKNOWN"),DOCUMENTS.replace("\"ML\"","\"ZZ\""),DOCUMENTS.replace("2999-12-31","2000-01-01")))
+            assertThat(submitKyc(id,body,"invalid","\"1\"",auth).statusCode()).as(body).isEqualTo(400);
+        assertThat(submitKyc(id,DOCUMENTS,"stable","\"1\"",auth).statusCode()).isEqualTo(201);
+        assertThat(submitKyc(id,DOCUMENTS.replace("vault-document-1","different"),"stable","\"1\"",auth).statusCode()).isEqualTo(409);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_submissions",Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void kycReplaySurvivesDocumentExpiryAndDoesNotResubmitTheProfile() throws Exception {
+        UUID id=completeProfileFixture();String auth=scopedToken("partner-a","kyc:submit");
+        var first=submitKyc(id,DOCUMENTS,"stable","\"1\"",auth);assertThat(first.statusCode()).isEqualTo(201);
+        org.mockito.Mockito.when(customerClock.instant()).thenReturn(Instant.parse("3000-01-02T00:00:00Z"));
+        var replay=submitKyc(id,DOCUMENTS,"stable","\"1\"",auth);
+        assertThat(replay.statusCode()).isEqualTo(201);assertThat(replay.body()).isEqualTo(first.body());
+        assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isEqualTo(2);
+    }
+
+    @Test
+    void kycReadsDoNotLeakOtherPartnerSubmissionsOrGrantImplicitReadPermission() throws Exception {
+        UUID id=completeProfileFixture();var created=submitKyc(id,DOCUMENTS,"kyc","\"1\"",scopedToken("partner-a","kyc:submit"));
+        UUID submission=UUID.fromString(json.readTree(created.body()).get("id").asString());
+        assertThat(readKyc(id,submission,scopedToken("partner-b","kyc:read")).statusCode()).isEqualTo(404);
+        assertThat(readKyc(UUID.randomUUID(),submission,scopedToken("partner-a","kyc:read")).statusCode()).isEqualTo(404);
+        assertThat(readKyc(id,submission,scopedToken("partner-a","kyc:submit")).statusCode()).isEqualTo(403);
+        assertThat(readKyc(id,submission,null).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void concurrentKycSubmissionsProduceOnlyOneActiveDossier() throws Exception {
+        UUID id=completeProfileFixture();String auth=scopedToken("partner-a","kyc:submit");CountDownLatch start=new CountDownLatch(1);
+        try(var pool=Executors.newVirtualThreadPerTaskExecutor()){
+            var a=pool.submit(()->{start.await();return submitKyc(id,DOCUMENTS,"one","\"1\"",auth).statusCode();});
+            var b=pool.submit(()->{start.await();return submitKyc(id,DOCUMENTS,"two","\"1\"",auth).statusCode();});
+            start.countDown();assertThat(List.of(a.get(20,TimeUnit.SECONDS),b.get(20,TimeUnit.SECONDS))).containsExactlyInAnyOrder(201,412);
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_submissions",Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_submission_requests",Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void failedKycRequestSnapshotRollsBackDossierAndCustomerState() throws Exception {
+        UUID id=completeProfileFixture();
+        jdbc.execute("CREATE FUNCTION reject_kyc_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Injected failure'; END $$");
+        jdbc.execute("CREATE TRIGGER reject_kyc_test BEFORE INSERT ON kyc_submission_requests FOR EACH ROW EXECUTE FUNCTION reject_kyc_test()");
+        try{
+            assertThat(submitKyc(id,DOCUMENTS,"rollback","\"1\"",scopedToken("partner-a","kyc:submit")).statusCode()).isEqualTo(503);
+            assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers",String.class)).isEqualTo("PENDING");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_submissions",Integer.class)).isZero();
+            assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isEqualTo(1);
+        }finally{jdbc.execute("DROP TRIGGER reject_kyc_test ON kyc_submission_requests");jdbc.execute("DROP FUNCTION reject_kyc_test()");}
+    }
+
+    private UUID completeProfileFixture()throws Exception {
+        UUID id=createProfileFixture();assertThat(patchProfile(id,COMPLETE_PROFILE,"\"0\"",token("partner-a")).statusCode()).isEqualTo(200);return id;
+    }
+    private HttpResponse<String> submitKyc(UUID id,String body,String key,String tag,String auth)throws Exception {
+        var request=HttpRequest.newBuilder(uri("/v1/customers/"+id+"/kyc-submissions")).header("Content-Type","application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if(key!=null)request.header("Idempotency-Key",key);if(tag!=null)request.header("If-Match",tag);
+        if(auth!=null)request.header("Authorization","Bearer "+auth);return HTTP.send(request.build(),HttpResponse.BodyHandlers.ofString());
+    }
+    private HttpResponse<String> readKyc(UUID id,UUID submission,String auth)throws Exception {
+        var request=HttpRequest.newBuilder(uri("/v1/customers/"+id+"/kyc-submissions/"+submission)).GET();
+        if(auth!=null)request.header("Authorization","Bearer "+auth);return HTTP.send(request.build(),HttpResponse.BodyHandlers.ofString());
     }
 
     private void assertCounts(int expected) {
