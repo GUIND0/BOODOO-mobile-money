@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BOODOO Customer API
   version: 0.1.0
-  description: Partner-scoped customer creation. No OTP, PIN, wallet creation, or KYC approval.
+  description: Partner-scoped customer onboarding and explicit operator KYC review. No OTP, PIN management or financial operations.
 paths:
   /v1/customers:
     post:
@@ -284,7 +284,8 @@ components:
       bearerFormat: JWT
       description: >-
         RS256 token from the configured issuer, for the configured audience, with exp,
-        integrator_id and scope customers:write. The issuer assigns the partner identity.
+        integrator_id and the endpoint-specific customer or KYC scope. Review also requires
+        actor_type operator and an independent reviewer subject. The issuer assigns these claims.
   schemas:
     CreateCustomer:
       type: object
@@ -346,7 +347,9 @@ components:
           type: string
         code:
           type: string
-          enum: [INVALID_REQUEST, CUSTOMER_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, CUSTOMER_CREATION_UNAVAILABLE, UNSUPPORTED_MEDIA_TYPE, CUSTOMER_NOT_FOUND, CUSTOMER_OPERATION_UNAVAILABLE, PRECONDITION_REQUIRED, PROFILE_VERSION_CONFLICT, PROFILE_LOCKED_FOR_KYC, ACTOR_REQUIRED]
+          enum: [INVALID_REQUEST, CUSTOMER_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, CUSTOMER_CREATION_UNAVAILABLE, UNSUPPORTED_MEDIA_TYPE, CUSTOMER_NOT_FOUND, CUSTOMER_OPERATION_UNAVAILABLE, PRECONDITION_REQUIRED, PROFILE_VERSION_CONFLICT, PROFILE_LOCKED_FOR_KYC, ACTOR_REQUIRED, PROFILE_INCOMPLETE, KYC_SUBMISSION_CONFLICT,
+                 KYC_SUBMISSION_NOT_FOUND, KYC_DOCUMENT_EXPIRED, OPERATOR_REQUIRED, SELF_REVIEW_FORBIDDEN,
+                 KYC_DECISION_EXISTS, STALE_KYC_SUBMISSION]
 
     Profile:
       type: object
