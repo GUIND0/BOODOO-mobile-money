@@ -43,6 +43,12 @@ public class CustomerRepository {
         return updated;
     }
 
+    public Optional<CustomerProfileResponse> findProfileByReference(String integrator, String reference) {
+        return jdbc.query("SELECT id FROM customers WHERE integrator_id = ? AND external_reference = ?",
+                (row, index) -> row.getObject("id", UUID.class), integrator, reference)
+                .stream().findFirst().flatMap(id -> findProfile(integrator, id));
+    }
+
     public boolean belongsTo(String integrator, UUID customerId) {
         return Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM customers WHERE id = ? AND integrator_id = ?)",

@@ -96,6 +96,10 @@ Tests run against real PostgreSQL 17 through Testcontainers and use an in-proces
 
 Transaction PINs belong to Identity Service. Audit-event integration and Gateway routing remain separate work.
 
+## Find a customer by external reference
+
+`GET /v1/customers/by-reference?externalReference=user-001` requires `customers:read` and returns the current profile with the same ETag and no-store caching as UUID lookup. The reference is case-sensitive, trimmed and limited to 128 characters. Encode it as a URL query value. Unknown references and references owned only by another integrator both return 404 CUSTOMER_NOT_FOUND. Partner identity always comes from the signed JWT. This exact lookup helps integrators recover a customer UUID without scanning pages or recreating a customer; it does not grant additional profile permissions.
+
 ## Internal ownership contract
 
 `GET /internal/v1/customers/{customerId}/ownership` requires a valid customer-audience token with scope `customers:ownership:read`. It derives the integrator from the validated token, returning `204` with an empty body only when that customer belongs to the integrator. Unknown and foreign customers both return empty `404` responses. It exposes no profile data and does not change KYC status.
