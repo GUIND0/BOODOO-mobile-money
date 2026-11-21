@@ -46,6 +46,7 @@ public class SecurityConfiguration {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/v1/customers").hasAuthority("SCOPE_customers:read")
                         .requestMatchers(HttpMethod.POST, "/v1/customers").hasAuthority("SCOPE_customers:write")
                         .requestMatchers(HttpMethod.GET, "/v1/customers/*").hasAuthority("SCOPE_customers:read")
                         .requestMatchers(HttpMethod.PATCH, "/v1/customers/*").hasAuthority("SCOPE_customers:write")
