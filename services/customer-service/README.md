@@ -116,6 +116,12 @@ Identity Service uses this endpoint before transaction-PIN setup. Its caller tok
 
 `GET /v1/customers/{customerId}` requires `customers:read`. The integrator comes from the validated JWT. It returns the current profile and KYC status with `200` and `Cache-Control: no-store`, rather than the historical creation snapshot. Foreign and missing customers both return `404 CUSTOMER_NOT_FOUND` without profile data. Missing authentication returns 401; creation scope alone does not grant read access. Malformed UUIDs return 400. Storage errors return 503 without database diagnostics.
 
+## Read profile update history
+
+`GET /v1/customers/{customerId}/profile-history?limit=50&afterVersion=0` requires `customers:audit:read`, a signed operator claim and stable subject. It returns immutable manual profile-edit metadata: revision, actor ID, changed field names and timestamp, without old/new profile values. Creation, no-op updates and KYC transitions are not profile-edit events; this endpoint is not a full audit log. Normal `customers:read` does not grant access.
+
+History is tenant/customer scoped, ordered by ascending revision. Limit is 1–100 (default 50); pass `nextAfterVersion` as `afterVersion`, keeping the customer unchanged. Null means the current end. Invalid parameters return 400; foreign and unknown customers return the same 404. Responses are not cached. Appended edits can appear on later pages; revision gaps from KYC transitions are valid.
+
 ## Complete a profile
 
 `PATCH /v1/customers/{customerId}` requires `customers:write`, a stable nonblank JWT `sub` for audit, and `If-Match` containing the current strong ETag from GET (for example `"0"`). Missing precondition returns 428, malformed ETag 400, stale revision 412. GET/PATCH responses now include `version`, `updatedAt` and optional profile details, with the matching ETag and no-store caching. The creation response and its stored replay remain unchanged.

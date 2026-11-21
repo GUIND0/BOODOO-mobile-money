@@ -49,6 +49,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/v1/customers").hasAuthority("SCOPE_customers:read")
                         .requestMatchers(HttpMethod.POST, "/v1/customers").hasAuthority("SCOPE_customers:write")
                         .requestMatchers(HttpMethod.GET, "/v1/customers/*").hasAuthority("SCOPE_customers:read")
+                        .requestMatchers(HttpMethod.GET, "/v1/customers/*/profile-history").hasAuthority("SCOPE_customers:audit:read")
                         .requestMatchers(HttpMethod.PATCH, "/v1/customers/*").hasAuthority("SCOPE_customers:write")
                         .requestMatchers(HttpMethod.POST, "/v1/customers/*/kyc-submissions").hasAuthority("SCOPE_kyc:submit")
                         .requestMatchers(HttpMethod.GET, "/v1/customers/*/kyc-submissions/*").hasAuthority("SCOPE_kyc:read")
