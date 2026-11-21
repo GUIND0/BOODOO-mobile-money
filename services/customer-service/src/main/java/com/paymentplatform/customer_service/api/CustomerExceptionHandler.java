@@ -1,5 +1,6 @@
 package com.paymentplatform.customer_service.api;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -10,9 +11,15 @@ import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class CustomerExceptionHandler {
+
+    @ExceptionHandler(CustomerOperationException.class)
+    ProblemDetail operation(CustomerOperationException exception) {
+        return problem(exception.status(), exception.code(), exception.getMessage());
+    }
 
     @ExceptionHandler(CustomerApiException.class)
     ProblemDetail conflict(CustomerApiException exception) {
@@ -20,10 +27,10 @@ public class CustomerExceptionHandler {
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, HandlerMethodValidationException.class,
-            HttpMessageNotReadableException.class, MissingRequestHeaderException.class})
+            HttpMessageNotReadableException.class, MissingRequestHeaderException.class, MethodArgumentTypeMismatchException.class})
     ProblemDetail invalidRequest(Exception exception) {
         return problem(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",
-                "Provide a valid customer profile and an Idempotency-Key of 1 to 128 permitted characters.");
+                "Provide valid request fields, identifiers and the headers required by this operation.");
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
@@ -32,7 +39,10 @@ public class CustomerExceptionHandler {
     }
 
     @ExceptionHandler(DataAccessException.class)
-    ProblemDetail unavailable(DataAccessException exception) {
+    ProblemDetail unavailable(DataAccessException exception, HttpServletRequest request) {
+        if (!(request.getMethod().equals("POST") && request.getRequestURI().equals("/v1/customers"))) {
+            return problem(HttpStatus.SERVICE_UNAVAILABLE, "CUSTOMER_OPERATION_UNAVAILABLE", "The customer operation is temporarily unavailable.");
+        }
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "CUSTOMER_CREATION_UNAVAILABLE",
                 "Creation is temporarily unavailable. Retry the same request with the same Idempotency-Key.");
     }

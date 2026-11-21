@@ -87,6 +87,37 @@ paths:
           description: Missing customers:ownership:read scope
         '404':
           description: Customer missing or foreign; empty response
+  /v1/customers/{customerId}:
+    get:
+      operationId: getCustomer
+      summary: Read the authenticated integrator's current customer profile
+      description: Requires customers:read; foreign and missing customers both return 404.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Current profile, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          description: Invalid UUID
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing customers:read
+        '404':
+          description: CUSTOMER_NOT_FOUND
+        '503':
+          description: CUSTOMER_OPERATION_UNAVAILABLE
 components:
   securitySchemes:
     partnerBearer:
@@ -157,4 +188,4 @@ components:
           type: string
         code:
           type: string
-          enum: [INVALID_REQUEST, CUSTOMER_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, CUSTOMER_CREATION_UNAVAILABLE, UNSUPPORTED_MEDIA_TYPE]
+          enum: [INVALID_REQUEST, CUSTOMER_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, CUSTOMER_CREATION_UNAVAILABLE, UNSUPPORTED_MEDIA_TYPE, CUSTOMER_NOT_FOUND, CUSTOMER_OPERATION_UNAVAILABLE]

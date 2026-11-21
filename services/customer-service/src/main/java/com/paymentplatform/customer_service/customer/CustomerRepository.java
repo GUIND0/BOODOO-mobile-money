@@ -18,6 +18,14 @@ public class CustomerRepository {
         this.jdbc = jdbc;
     }
 
+    public Optional<CustomerResponse> findProfile(String integrator, UUID customer) {
+        return jdbc.query("SELECT * FROM customers WHERE integrator_id = ? AND id = ?",
+                (row, index) -> new CustomerResponse(row.getObject("id", UUID.class), row.getString("external_reference"),
+                        row.getString("first_name"), row.getString("last_name"), row.getString("phone_number"),
+                        row.getString("kyc_status"), row.getObject("created_at", OffsetDateTime.class).toInstant()),
+                integrator, customer).stream().findFirst();
+    }
+
     public boolean belongsTo(String integrator, UUID customerId) {
         return Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM customers WHERE id = ? AND integrator_id = ?)",
