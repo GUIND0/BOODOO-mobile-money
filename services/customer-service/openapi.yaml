@@ -5,6 +5,56 @@ info:
   description: Partner-scoped customer onboarding and explicit operator KYC review. No OTP, PIN management or financial operations.
 paths:
   /v1/customers:
+    get:
+      operationId: listCustomers
+      summary: List the authenticated integrator's customer summaries
+      description: >-
+        Requires customers:read. Live keyset pagination by ascending UUID, not creation time.
+        Keep the same filter across pages; concurrent changes are not snapshotted.
+        No phone, address or evidence is returned. Cursor values never grant tenant access.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - in: query
+          name: after
+          schema: {type: string, format: uuid}
+        - in: query
+          name: kycStatus
+          schema: {type: string, enum: [PENDING, UNDER_REVIEW, APPROVED, REJECTED]}
+      responses:
+        '200':
+          description: Customer summaries, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextAfter]
+                properties:
+                  nextAfter: {type: [string, 'null'], format: uuid}
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required: [id, externalReference, firstName, lastName, kycStatus, createdAt]
+                      properties:
+                        id: {type: string, format: uuid}
+                        externalReference: {type: string}
+                        firstName: {type: string}
+                        lastName: {type: string}
+                        kycStatus: {type: string, enum: [PENDING, UNDER_REVIEW, APPROVED, REJECTED]}
+                        createdAt: {type: string, format: date-time}
+        '400':
+          description: Invalid limit, cursor or status
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing customers:read scope
+        '503':
+          description: Customer storage temporarily unavailable
     post:
       operationId: createCustomer
       summary: Create a minimal customer with pending KYC
