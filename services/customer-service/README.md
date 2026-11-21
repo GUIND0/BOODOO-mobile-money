@@ -126,6 +126,12 @@ Submission and idempotency state commit together. A same-key replay with the sam
 
 Flyway V3 preserves prior migrations and adds submissions, request snapshots and the active-dossier link. Stored KYC status can now represent PENDING, UNDER_REVIEW, APPROVED or REJECTED; decision APIs are separate. Storage failure rolls back the dossier, status and revision together. Submitted DTO/profile string representations are redacted.
 
+## List dossiers available for review
+
+`GET /v1/kyc-review-queue?limit=50` requires `kyc:review`, the signed `actor_type: operator` claim and a stable nonblank subject. It returns only the authenticated integrator's active UNDER_REVIEW dossiers with the frozen profile revision still intact and no final decision. The operator's own submissions are excluded to preserve maker/checker separation. Each entry contains submission/customer IDs, the submitted profile revision and submission timestamp; it contains no profile, document metadata or submitter identity. Read a dossier separately with `kyc:read`.
+
+Pagination uses ascending submission UUIDs, not review priority or submission time. `limit` defaults to 50 (1–100); pass `nextAfter` as `after`, with null meaning the current end. Invalid parameters return 400. Responses use `Cache-Control: no-store`. This is a live queue, not a reservation: decisions, resubmissions and new arrivals can change subsequent pages. The decision endpoint rechecks all eligibility rules under lock, including evidence expiry; appearing here does not guarantee approval eligibility. No assignment, automatic review or financial activation occurs.
+
 ## Review a submitted KYC dossier
 
 `POST /v1/customers/{customerId}/kyc-submissions/{submissionId}/decisions` requires `kyc:review`, a stable nonblank JWT `sub`, and the signed claim `actor_type: operator`. The trusted issuer must assign these permissions only to authenticated review operators; request-body actor fields or arbitrary headers never establish identity. The reviewer subject must differ from `submittedBy` (maker/checker separation). Stable actor IDs must identify the actual principal consistently across tokens.
