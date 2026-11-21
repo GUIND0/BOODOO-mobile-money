@@ -1,6 +1,10 @@
 package com.paymentplatform.customer_service.customer;
 
 import com.paymentplatform.customer_service.api.CreateCustomerRequest;
+import com.paymentplatform.customer_service.api.CustomerProfileResponse;
+import java.util.List;
+import java.time.LocalDate;
+import tools.jackson.databind.ObjectMapper;
 import com.paymentplatform.customer_service.api.CustomerResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
@@ -18,12 +22,25 @@ public class CustomerRepository {
         this.jdbc = jdbc;
     }
 
-    public Optional<CustomerResponse> findProfile(String integrator, UUID customer) {
-        return jdbc.query("SELECT * FROM customers WHERE integrator_id = ? AND id = ?",
-                (row, index) -> new CustomerResponse(row.getObject("id", UUID.class), row.getString("external_reference"),
-                        row.getString("first_name"), row.getString("last_name"), row.getString("phone_number"),
-                        row.getString("kyc_status"), row.getObject("created_at", OffsetDateTime.class).toInstant()),
-                integrator, customer).stream().findFirst();
+    public Optional<CustomerProfileResponse> findProfile(String integrator, UUID customer) { return profile(integrator,customer,false); }
+    public Optional<CustomerProfileResponse> lockProfile(String integrator, UUID customer) { return profile(integrator,customer,true); }
+    private Optional<CustomerProfileResponse> profile(String integrator,UUID customer,boolean lock) {
+        return jdbc.query("SELECT * FROM customers WHERE integrator_id = ? AND id = ?"+(lock?" FOR UPDATE":""),
+                (row,index)->new CustomerProfileResponse(row.getObject("id",UUID.class),row.getString("external_reference"),
+                        row.getString("first_name"),row.getString("last_name"),row.getString("phone_number"),row.getString("kyc_status"),
+                        row.getObject("created_at",OffsetDateTime.class).toInstant(),row.getLong("profile_version"),
+                        row.getObject("updated_at",OffsetDateTime.class).toInstant(),row.getObject("date_of_birth",LocalDate.class),
+                        row.getString("nationality"),row.getString("residence_country"),row.getString("address_line"),row.getString("city")),integrator,customer).stream().findFirst();
+    }
+    public CustomerProfileResponse updateProfile(String integrator,CustomerProfileResponse next,String actor,List<String> fields){
+        jdbc.update("""
+                UPDATE customers SET first_name=?,last_name=?,date_of_birth=?,nationality=?,residence_country=?,address_line=?,city=?,
+                  profile_version=profile_version+1,updated_at=clock_timestamp() WHERE integrator_id=? AND id=?
+                """,next.firstName(),next.lastName(),next.dateOfBirth(),next.nationality(),next.residenceCountry(),next.addressLine(),next.city(),integrator,next.id());
+        var updated=findProfile(integrator,next.id()).orElseThrow();
+        jdbc.update("INSERT INTO customer_profile_updates (integrator_id,customer_id,profile_version,actor_id,changed_fields) VALUES (?,?,?,?,?::jsonb)",
+                integrator,next.id(),updated.version(),actor,new ObjectMapper().writeValueAsString(fields));
+        return updated;
     }
 
     public boolean belongsTo(String integrator, UUID customerId) {

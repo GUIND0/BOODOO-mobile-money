@@ -105,3 +105,11 @@ Identity Service uses this endpoint before transaction-PIN setup. Its caller tok
 ## Read a customer profile
 
 `GET /v1/customers/{customerId}` requires `customers:read`. The integrator comes from the validated JWT. It returns the current profile and KYC status with `200` and `Cache-Control: no-store`, rather than the historical creation snapshot. Foreign and missing customers both return `404 CUSTOMER_NOT_FOUND` without profile data. Missing authentication returns 401; creation scope alone does not grant read access. Malformed UUIDs return 400. Storage errors return 503 without database diagnostics.
+
+## Complete a profile
+
+`PATCH /v1/customers/{customerId}` requires `customers:write`, a stable nonblank JWT `sub` for audit, and `If-Match` containing the current strong ETag from GET (for example `"0"`). Missing precondition returns 428, malformed ETag 400, stale revision 412. GET/PATCH responses now include `version`, `updatedAt` and optional profile details, with the matching ETag and no-store caching. The creation response and its stored replay remain unchanged.
+
+Allowed optional fields: firstName, lastName, dateOfBirth (ISO date strictly in the past), nationality and residenceCountry (ISO alpha-2, normalized uppercase), addressLine and city. Missing or null fields mean unchanged; at least one non-null field is required. Clearing fields, changing phone/external reference/ownership/KYC, or changing a profile while KYC is under review/approved is not supported. No legal age or eligibility rule is inferred from date of birth.
+
+Actual changes atomically increment the revision and append actor/revision/changed-field names to immutable profile history, without duplicating profile values there. Identical no-op updates retain the revision. On an uncertain response, GET the current profile before retrying with its ETag. Storage errors roll back both profile and history. Flyway V2 preserves existing minimal profiles with revision zero and nullable enrichment fields.

@@ -28,6 +28,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -55,8 +56,7 @@ class CustomerServiceApplicationTests {
 
     @BeforeEach
     void clearCustomers() {
-        jdbc.update("DELETE FROM customer_creation_requests");
-        jdbc.update("DELETE FROM customers");
+        jdbc.execute("TRUNCATE customer_profile_updates, customer_creation_requests, customers");
     }
 
     @AfterAll
@@ -64,7 +64,7 @@ class CustomerServiceApplicationTests {
 
     @Test
     void startsWithMigratedPostgresAndReportsHealthy() throws Exception {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(2);
         var response = HTTP.send(HttpRequest.newBuilder(uri("/actuator/health")).GET().build(), HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(json.readTree(response.body()).get("status").asString()).isEqualTo("UP");
@@ -325,7 +325,8 @@ class CustomerServiceApplicationTests {
         UUID id = UUID.fromString(json.readTree(created.body()).get("id").asString());
         var read = readProfile(id, scopedToken("partner-a", "customers:read"));
         assertThat(read.statusCode()).isEqualTo(200);
-        assertThat(read.body()).isEqualTo(created.body());
+        assertThat(json.readTree(read.body()).get("id").asString()).isEqualTo(id.toString());
+        assertThat(read.headers().firstValue("ETag")).contains("\"0\"");
         assertThat(read.headers().firstValue("Cache-Control").orElse("")).contains("no-store");
         assertThat(read.headers().firstValue("Set-Cookie")).isEmpty();
         jdbc.update("UPDATE customers SET first_name = 'Changed' WHERE id = ?", id);
@@ -361,6 +362,94 @@ class CustomerServiceApplicationTests {
         var builder = HttpRequest.newBuilder(uri("/v1/customers/" + customer)).GET();
         if (token != null) builder.header("Authorization", "Bearer " + token);
         return HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static final String COMPLETE_PROFILE = """
+            {"dateOfBirth":"1990-01-02","nationality":"ml","residenceCountry":"ML","addressLine":"Quartier Test","city":"Bamako"}
+            """;
+
+    @Test
+    void updatesProfileWithRevisionAndImmutableAuditWithoutChangingCreationSnapshot() throws Exception {
+        var original=post(PROFILE,"profile-fixture",token("partner-a"));
+        UUID id=UUID.fromString(json.readTree(original.body()).get("id").asString());
+        var updated=patchProfile(id,COMPLETE_PROFILE,"\"0\"",token("partner-a"));
+        assertThat(updated.statusCode()).isEqualTo(200);
+        assertThat(updated.headers().firstValue("ETag")).contains("\"1\"");
+        assertThat(json.readTree(updated.body()).get("nationality").asString()).isEqualTo("ML");
+        assertThat(json.readTree(updated.body()).get("dateOfBirth").asString()).isEqualTo("1990-01-02");
+        assertThat(json.readTree(updated.body()).get("kycStatus").asString()).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT actor_id FROM customer_profile_updates",String.class)).isEqualTo("integration-client");
+        assertThat(patchProfile(id,COMPLETE_PROFILE,"\"1\"",token("partner-a")).headers().firstValue("ETag")).contains("\"1\"");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM customer_profile_updates",Integer.class)).isEqualTo(1);
+        assertThat(post(PROFILE,"profile-fixture",token("partner-a")).body()).isEqualTo(original.body());
+        assertThatThrownBy(() -> jdbc.update("DELETE FROM customer_profile_updates")).isInstanceOf(org.springframework.dao.DataAccessException.class);
+    }
+
+    @Test
+    void patchRequiresCurrentStrongEtagAndRejectsReadOnlyFields() throws Exception {
+        UUID id=createProfileFixture();
+        assertThat(patchProfile(id,COMPLETE_PROFILE,null,token("partner-a")).statusCode()).isEqualTo(428);
+        for(String tag:List.of("0","*","W/\"0\"","\"9999999999999999999\""))
+            assertThat(patchProfile(id,COMPLETE_PROFILE,tag,token("partner-a")).statusCode()).isEqualTo(400);
+        assertThat(patchProfile(id,COMPLETE_PROFILE,"\"0\"",token("partner-a")).statusCode()).isEqualTo(200);
+        assertThat(patchProfile(id,"{\"firstName\":\"Changed\"}","\"0\"",token("partner-a")).statusCode()).isEqualTo(412);
+        for(String body:List.of("{}","{\"kycStatus\":\"APPROVED\"}","{\"phoneNumber\":\"+22370000002\"}",
+                "{\"externalReference\":\"changed\"}","{\"dateOfBirth\":\"2999-01-01\"}","{\"nationality\":\"ZZ\"}",
+                "{\"firstName\":\" \"}","{\"city\":null}")) {
+            var response=patchProfile(id,body,"\"1\"",token("partner-a"));
+            assertThat(response.statusCode()).as(body).isEqualTo(400);
+        }
+    }
+
+    @Test
+    void patchEnforcesPartnerWritePermissionAndAuditableActor() throws Exception {
+        UUID id=createProfileFixture();
+        assertThat(patchProfile(id,COMPLETE_PROFILE,"\"0\"",null).statusCode()).isEqualTo(401);
+        assertThat(patchProfile(id,COMPLETE_PROFILE,"\"0\"",scopedToken("partner-a","customers:read")).statusCode()).isEqualTo(403);
+        assertThat(patchProfile(id,COMPLETE_PROFILE,"\"0\"",token("partner-b")).statusCode()).isEqualTo(404);
+        assertThat(patchProfile(id,COMPLETE_PROFILE,"\"0\"",actorToken("partner-a","customers:write",null,null)).statusCode()).isEqualTo(403);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM customer_profile_updates",Integer.class)).isZero();
+    }
+
+    @Test
+    void concurrentProfilePatchesCannotLoseAnUpdate() throws Exception {
+        UUID id=createProfileFixture();String auth=token("partner-a");CountDownLatch start=new CountDownLatch(1);
+        try(var pool=Executors.newVirtualThreadPerTaskExecutor()) {
+            var a=pool.submit(()->{start.await();return patchProfile(id,"{\"firstName\":\"One\"}","\"0\"",auth).statusCode();});
+            var b=pool.submit(()->{start.await();return patchProfile(id,"{\"firstName\":\"Two\"}","\"0\"",auth).statusCode();});
+            start.countDown();assertThat(List.of(a.get(20,TimeUnit.SECONDS),b.get(20,TimeUnit.SECONDS))).containsExactlyInAnyOrder(200,412);
+        }
+        assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM customer_profile_updates",Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void failedProfileAuditRollsBackTheProfileUpdate() throws Exception {
+        UUID id=createProfileFixture();
+        jdbc.execute("CREATE FUNCTION reject_profile_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Injected failure'; END $$");
+        jdbc.execute("CREATE TRIGGER reject_profile_test BEFORE INSERT ON customer_profile_updates FOR EACH ROW EXECUTE FUNCTION reject_profile_test()");
+        try {
+            assertThat(patchProfile(id,COMPLETE_PROFILE,"\"0\"",token("partner-a")).statusCode()).isEqualTo(503);
+            assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isZero();
+            assertThat(jdbc.queryForObject("SELECT date_of_birth IS NULL FROM customers",Boolean.class)).isTrue();
+        }finally{jdbc.execute("DROP TRIGGER reject_profile_test ON customer_profile_updates");jdbc.execute("DROP FUNCTION reject_profile_test()");}
+    }
+
+    private UUID createProfileFixture() throws Exception {
+        return UUID.fromString(json.readTree(post(PROFILE,"profile-fixture",token("partner-a")).body()).get("id").asString());
+    }
+    private HttpResponse<String> patchProfile(UUID id,String body,String tag,String auth)throws Exception {
+        var request=HttpRequest.newBuilder(uri("/v1/customers/"+id)).header("Content-Type","application/json")
+                .method("PATCH",HttpRequest.BodyPublishers.ofString(body));
+        if(tag!=null)request.header("If-Match",tag);if(auth!=null)request.header("Authorization","Bearer "+auth);
+        return HTTP.send(request.build(),HttpResponse.BodyHandlers.ofString());
+    }
+    private String actorToken(String partner,String scopes,String subject,String actorType)throws Exception {
+        var claims=new JWTClaimsSet.Builder().issuer(ISSUER).audience(AUDIENCE).claim("integrator_id",partner).claim("scope",scopes)
+                .issueTime(new Date()).expirationTime(Date.from(Instant.now().plusSeconds(300)));
+        if(subject!=null)claims.subject(subject);if(actorType!=null)claims.claim("actor_type",actorType);
+        var jwt=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID("test-key").build(),claims.build());
+        jwt.sign(new RSASSASigner(SIGNING_KEY));return jwt.serialize();
     }
 
     private void assertCounts(int expected) {
