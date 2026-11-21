@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/boodoo-logo.png" alt="Logo BOODOO" width="360">
+</p>
+
 # BOODOO — Mobile Money Platform
 
 **BOODOO** is an open-source, microservices-based Mobile Money platform under development, designed to support digital wallet management, peer-to-peer money transfers, merchant payments, and reliable financial transaction processing.
