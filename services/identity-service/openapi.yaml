@@ -5,6 +5,37 @@ info:
   description: First PIN setup and verification. No OTP, PIN change/recovery, payment authorization or KYC approval.
 paths:
   /v1/customers/{customerId}/pin:
+    get:
+      operationId: getCustomerPinStatus
+      summary: Read whether an owned customer has configured a transaction PIN
+      description: >-
+        Requires pins:read, customers:ownership:read and both service audiences.
+        Checks remote ownership before local state. No comparison, counter mutation or payment authorization.
+        A configured credential may still be temporarily locked; no lock/credential details are exposed.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Configuration flag only, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [customerId, configured]
+                properties:
+                  customerId: {type: string, format: uuid}
+                  configured: {type: boolean}
+        '400': {description: Invalid customer UUID}
+        '401': {description: Missing or invalid bearer identity or audiences}
+        '403': {description: Missing read scope or ownership permission}
+        '404': {description: Unknown or foreign customer}
+        '503': {description: Ownership or PIN status storage unavailable; never reported as false}
     post:
       operationId: createCustomerPin
       summary: Create the customer's first transaction PIN
