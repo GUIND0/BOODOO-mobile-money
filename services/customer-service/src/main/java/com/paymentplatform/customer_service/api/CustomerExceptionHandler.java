@@ -27,7 +27,8 @@ public class CustomerExceptionHandler {
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, HandlerMethodValidationException.class,
-            HttpMessageNotReadableException.class, MissingRequestHeaderException.class, MethodArgumentTypeMismatchException.class})
+            HttpMessageNotReadableException.class, MissingRequestHeaderException.class, MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class})
     ProblemDetail invalidRequest(Exception exception) {
         return problem(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",
                 "Provide valid request fields, identifiers and the headers required by this operation.");

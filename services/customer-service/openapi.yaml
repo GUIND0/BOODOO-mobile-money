@@ -114,6 +114,32 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /v1/customers/by-reference:
+    get:
+      operationId: findCustomerByReference
+      summary: Find the current profile by an integrator's exact external reference
+      description: Requires customers:read. Case-sensitive, trimmed reference; tenant derives from JWT.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: query
+          name: externalReference
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      responses:
+        '200':
+          description: Current profile with ETag and Cache-Control no-store
+          headers:
+            ETag:
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Profile'}
+        '400': {description: Missing or invalid reference}
+        '401': {description: Missing or invalid bearer identity}
+        '403': {description: Missing customers:read}
+        '404': {description: Unknown or foreign reference}
+        '503': {description: Customer storage unavailable}
   /internal/v1/customers/{customerId}/ownership:
     get:
       operationId: checkCustomerOwnership
