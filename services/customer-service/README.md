@@ -132,6 +132,12 @@ Submission and idempotency state commit together. A same-key replay with the sam
 
 Flyway V3 preserves prior migrations and adds submissions, request snapshots and the active-dossier link. Stored KYC status can now represent PENDING, UNDER_REVIEW, APPROVED or REJECTED; decision APIs are separate. Storage failure rolls back the dossier, status and revision together. Submitted DTO/profile string representations are redacted.
 
+## List a customer's KYC submissions
+
+`GET /v1/customers/{customerId}/kyc-submissions?limit=50` requires `kyc:read` and lists historical as well as active submissions for that integrator/customer. Each summary contains dossier ID, captured profile revision, submission time and that dossier's own review status. A later resubmission never changes the rejected status of an older dossier. Profile snapshots, document references and actor identities are excluded; retrieve a dossier separately when needed.
+
+Items use ascending UUID order, not chronological order. Limits are 1–100 (default 50); pass `nextAfter` as `after`, with null indicating the current end. This live pagination does not freeze decision changes or newly submitted dossiers. Unknown/foreign customers return 404, an owned customer without dossiers returns an empty page, malformed pagination returns 400. Responses use no-store caching.
+
 ## List dossiers available for review
 
 `GET /v1/kyc-review-queue?limit=50` requires `kyc:review`, the signed `actor_type: operator` claim and a stable nonblank subject. It returns only the authenticated integrator's active UNDER_REVIEW dossiers with the frozen profile revision still intact and no final decision. The operator's own submissions are excluded to preserve maker/checker separation. Each entry contains submission/customer IDs, the submitted profile revision and submission timestamp; it contains no profile, document metadata or submitter identity. Read a dossier separately with `kyc:read`.
