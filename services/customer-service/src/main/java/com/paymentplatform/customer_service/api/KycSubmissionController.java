@@ -21,8 +21,8 @@ public class KycSubmissionController {
                 .header("Idempotency-Replayed",Boolean.toString(submission.replayed())).body(submission.response());
     }
     @GetMapping("/v1/customers/{customerId}/kyc-submissions/{submissionId}")
-    ResponseEntity<KycSubmissionResponse> get(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID customerId,@PathVariable UUID submissionId){
-        var result=kyc.findSubmission(jwt.getClaimAsString("integrator_id"),customerId,submissionId)
+    ResponseEntity<KycDossierResponse> get(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID customerId,@PathVariable UUID submissionId){
+        var result=kyc.findDossier(jwt.getClaimAsString("integrator_id"),customerId,submissionId)
                 .orElseThrow(()->new CustomerOperationException(HttpStatus.NOT_FOUND,"KYC_SUBMISSION_NOT_FOUND","KYC submission not found for this integrator."));
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(result);
     }

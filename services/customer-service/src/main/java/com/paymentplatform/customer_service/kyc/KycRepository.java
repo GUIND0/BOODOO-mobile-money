@@ -23,12 +23,28 @@ public class KycRepository {
                 """,OffsetDateTime.class,id,integrator,profile.id(),profile.version(),json.writeValueAsString(profile),json.writeValueAsString(documents),actor);
         return new KycSubmissionResponse(id,profile.id(),"UNDER_REVIEW",profile.version(),profile,documents,actor,at.toInstant());
     }
+    private static final String DOSSIER_SQL="""
+            SELECT s.*,d.id AS decision_id,d.status AS decision_status,d.reason_code,d.reviewed_by,d.reviewed_at
+            FROM kyc_submissions s LEFT JOIN kyc_decisions d ON d.integrator_id=s.integrator_id AND d.submission_id=s.id
+            WHERE s.integrator_id=? AND s.customer_id=? AND s.id=?
+            """;
+    private KycSubmissionResponse readSubmission(java.sql.ResultSet row)throws java.sql.SQLException {
+        String status=row.getString("decision_status");
+        return new KycSubmissionResponse(row.getObject("id",UUID.class),row.getObject("customer_id",UUID.class),status==null?"UNDER_REVIEW":status,
+                row.getLong("profile_version"),json.readValue(row.getString("profile_snapshot"),CustomerProfileResponse.class),
+                java.util.List.of(json.readValue(row.getString("documents"),KycDocument[].class)),row.getString("submitted_by"),
+                row.getObject("submitted_at",OffsetDateTime.class).toInstant());
+    }
     public Optional<KycSubmissionResponse> findSubmission(String integrator,UUID customer,UUID submission){
-        return jdbc.query("SELECT * FROM kyc_submissions WHERE integrator_id=? AND customer_id=? AND id=?",
-                (row,index)->new KycSubmissionResponse(row.getObject("id",UUID.class),row.getObject("customer_id",UUID.class),"UNDER_REVIEW",
-                        row.getLong("profile_version"),json.readValue(row.getString("profile_snapshot"),CustomerProfileResponse.class),
-                        java.util.List.of(json.readValue(row.getString("documents"),KycDocument[].class)),row.getString("submitted_by"),
-                        row.getObject("submitted_at",OffsetDateTime.class).toInstant()),integrator,customer,submission).stream().findFirst();
+        return jdbc.query(DOSSIER_SQL,(row,index)->readSubmission(row),integrator,customer,submission).stream().findFirst();
+    }
+    public Optional<KycDossierResponse> findDossier(String integrator,UUID customer,UUID submission){
+        return jdbc.query(DOSSIER_SQL,(row,index)->{
+            var base=readSubmission(row);UUID decision=row.getObject("decision_id",UUID.class);
+            var result=decision==null?null:new KycDecisionResponse(decision,customer,submission,row.getString("decision_status"),
+                    row.getString("reason_code"),row.getString("reviewed_by"),row.getObject("reviewed_at",OffsetDateTime.class).toInstant());
+            return KycDossierResponse.of(base,result);
+        },integrator,customer,submission).stream().findFirst();
     }
     public void activate(String integrator,UUID customer,UUID submission){
         jdbc.update("UPDATE customers SET active_kyc_submission_id=?,kyc_status='UNDER_REVIEW',profile_version=profile_version+1,updated_at=clock_timestamp() WHERE integrator_id=? AND id=?",submission,integrator,customer);

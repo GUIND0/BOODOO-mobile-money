@@ -59,7 +59,7 @@ class CustomerServiceApplicationTests {
     void clearCustomers() {
         org.mockito.Mockito.when(customerClock.instant()).thenAnswer(inv -> Instant.now());
         org.mockito.Mockito.when(customerClock.getZone()).thenReturn(java.time.ZoneOffset.UTC);
-        jdbc.execute("TRUNCATE kyc_submission_requests, kyc_submissions, customer_profile_updates, customer_creation_requests, customers");
+        jdbc.execute("TRUNCATE kyc_decision_requests, kyc_decisions, kyc_submission_requests, kyc_submissions, customer_profile_updates, customer_creation_requests, customers");
     }
 
     @AfterAll
@@ -67,7 +67,7 @@ class CustomerServiceApplicationTests {
 
     @Test
     void startsWithMigratedPostgresAndReportsHealthy() throws Exception {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(4);
         var response = HTTP.send(HttpRequest.newBuilder(uri("/actuator/health")).GET().build(), HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(json.readTree(response.body()).get("status").asString()).isEqualTo("UP");
@@ -552,6 +552,167 @@ class CustomerServiceApplicationTests {
     private HttpResponse<String> readKyc(UUID id,UUID submission,String auth)throws Exception {
         var request=HttpRequest.newBuilder(uri("/v1/customers/"+id+"/kyc-submissions/"+submission)).GET();
         if(auth!=null)request.header("Authorization","Bearer "+auth);return HTTP.send(request.build(),HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static final String APPROVAL="{\"decision\":\"APPROVED\",\"reasonCode\":\"MANUAL_REVIEW_PASSED\"}";
+    private static final String REJECTION="{\"decision\":\"REJECTED\",\"reasonCode\":\"DOCUMENT_UNREADABLE\"}";
+
+    @Test
+    void authorizedIndependentOperatorApprovesFrozenKycWithImmutableDecision() throws Exception {
+        var fixture=submittedFixture();UUID id=fixture.get(0),submission=fixture.get(1);
+        String reviewer=operatorToken("partner-a","operator-1");
+        var result=decideKyc(id,submission,APPROVAL,"decision",reviewer);assertThat(result.statusCode()).isEqualTo(201);
+        assertThat(json.readTree(result.body()).get("reviewedBy").asString()).isEqualTo("operator-1");
+        assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers",String.class)).isEqualTo("APPROVED");
+        assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isEqualTo(3);
+        var dossier=json.readTree(readKyc(id,submission,scopedToken("partner-a","kyc:read")).body());
+        assertThat(dossier.get("status").asString()).isEqualTo("APPROVED");
+        assertThat(dossier.get("decision").get("reasonCode").asString()).isEqualTo("MANUAL_REVIEW_PASSED");
+        assertThat(patchProfile(id,"{\"city\":\"Changed\"}","\"3\"",token("partner-a")).statusCode()).isEqualTo(409);
+        assertThatThrownBy(()->jdbc.update("DELETE FROM kyc_decisions")).isInstanceOf(org.springframework.dao.DataAccessException.class);
+        assertThatThrownBy(()->jdbc.update("DELETE FROM kyc_decision_requests")).isInstanceOf(org.springframework.dao.DataAccessException.class);
+    }
+
+    @Test
+    void decisionReplaysAreStableButPayloadActorAndSecondDecisionConflictsAreRejected() throws Exception {
+        var fixture=submittedFixture();UUID id=fixture.get(0),submission=fixture.get(1);
+        String reviewer=operatorToken("partner-a","operator-1");var original=decideKyc(id,submission,APPROVAL,"stable",reviewer);
+        var replay=decideKyc(id,submission,APPROVAL,"stable",reviewer);
+        assertThat(replay.statusCode()).isEqualTo(201);assertThat(replay.body()).isEqualTo(original.body());
+        assertThat(replay.headers().firstValue("Idempotency-Replayed")).contains("true");
+        assertThat(decideKyc(id,submission,REJECTION,"stable",reviewer).statusCode()).isEqualTo(409);
+        assertThat(decideKyc(id,submission,APPROVAL,"stable",operatorToken("partner-a","operator-2")).statusCode()).isEqualTo(409);
+        assertThat(decideKyc(id,submission,REJECTION,"new-key",reviewer).statusCode()).isEqualTo(409);
+        org.mockito.Mockito.when(customerClock.instant()).thenReturn(Instant.parse("3000-01-02T00:00:00Z"));
+        assertThat(decideKyc(id,submission,APPROVAL,"stable",reviewer).body()).isEqualTo(original.body());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_decisions",Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void reviewRequiresOperatorClaimScopeActorSeparationAndPartnerOwnership() throws Exception {
+        var fixture=submittedFixture();UUID id=fixture.get(0),submission=fixture.get(1);
+        assertThat(decideKyc(id,submission,APPROVAL,"no-auth",null).statusCode()).isEqualTo(401);
+        assertThat(decideKyc(id,submission,APPROVAL,"wrong-scope",scopedToken("partner-a","kyc:submit")).statusCode()).isEqualTo(403);
+        assertThat(decideKyc(id,submission,APPROVAL,"no-role",actorToken("partner-a","kyc:review","operator-1",null)).statusCode()).isEqualTo(403);
+        assertThat(decideKyc(id,submission,APPROVAL,"missing-actor",actorToken("partner-a","kyc:review",null,"operator")).statusCode()).isEqualTo(403);
+        var self=decideKyc(id,submission,APPROVAL,"self",operatorToken("partner-a","integration-client"));
+        assertThat(self.statusCode()).isEqualTo(403);assertThat(json.readTree(self.body()).get("code").asString()).isEqualTo("SELF_REVIEW_FORBIDDEN");
+        assertThat(decideKyc(id,submission,APPROVAL,"foreign",operatorToken("partner-b","operator-1")).statusCode()).isEqualTo(404);
+        assertThat(decideKyc(id,UUID.randomUUID(),APPROVAL,"missing",operatorToken("partner-a","operator-1")).statusCode()).isEqualTo(404);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_decisions",Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers",String.class)).isEqualTo("UNDER_REVIEW");
+    }
+
+    @Test
+    void reviewRejectsInvalidDecisionReasonAndSpoofedActorFields() throws Exception {
+        var fixture=submittedFixture();String reviewer=operatorToken("partner-a","operator-1");
+        for(String body:List.of("{}","{\"decision\":\"PENDING\",\"reasonCode\":\"TEST\"}",
+                "{\"decision\":\"APPROVED\"}","{\"decision\":\"APPROVED\",\"reasonCode\":\"contains spaces\"}",
+                "{\"decision\":\"APPROVED\",\"reasonCode\":\"TEST\",\"reviewedBy\":\"another-actor\"}"))
+            assertThat(decideKyc(fixture.get(0),fixture.get(1),body,"invalid",reviewer).statusCode()).isEqualTo(400);
+        assertThat(decideKyc(fixture.get(0),fixture.get(1),APPROVAL,null,reviewer).statusCode()).isEqualTo(400);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_decisions",Integer.class)).isZero();
+    }
+
+    @Test
+    void expiredEvidenceCanBeRejectedButCannotBeApproved() throws Exception {
+        var fixture=submittedFixture();String reviewer=operatorToken("partner-a","operator-1");
+        org.mockito.Mockito.when(customerClock.instant()).thenReturn(Instant.parse("3000-01-02T00:00:00Z"));
+        var denied=decideKyc(fixture.get(0),fixture.get(1),APPROVAL,"expired",reviewer);
+        assertThat(denied.statusCode()).isEqualTo(409);assertThat(json.readTree(denied.body()).get("code").asString()).isEqualTo("KYC_DOCUMENT_EXPIRED");
+        assertThat(decideKyc(fixture.get(0),fixture.get(1),REJECTION,"reject-expired",reviewer).statusCode()).isEqualTo(201);
+        assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers",String.class)).isEqualTo("REJECTED");
+    }
+
+    @Test
+    void rejectsDecisionWhenFrozenProfileRevisionIsNoLongerCurrent() throws Exception {
+        var fixture=submittedFixture();jdbc.update("UPDATE customers SET profile_version=profile_version+1");
+        var result=decideKyc(fixture.get(0),fixture.get(1),APPROVAL,"stale",operatorToken("partner-a","operator-1"));
+        assertThat(result.statusCode()).isEqualTo(409);assertThat(json.readTree(result.body()).get("code").asString()).isEqualTo("STALE_KYC_SUBMISSION");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_decisions",Integer.class)).isZero();
+    }
+
+    @Test
+    void concurrentOperatorsCanCreateOnlyOneFinalDecision() throws Exception {
+        var fixture=submittedFixture();CountDownLatch start=new CountDownLatch(1);
+        String first=operatorToken("partner-a","operator-1"),second=operatorToken("partner-a","operator-2");
+        try(var pool=Executors.newVirtualThreadPerTaskExecutor()){
+            var a=pool.submit(()->{start.await();return decideKyc(fixture.get(0),fixture.get(1),APPROVAL,"one",first).statusCode();});
+            var b=pool.submit(()->{start.await();return decideKyc(fixture.get(0),fixture.get(1),REJECTION,"two",second).statusCode();});
+            start.countDown();assertThat(List.of(a.get(20,TimeUnit.SECONDS),b.get(20,TimeUnit.SECONDS))).containsExactlyInAnyOrder(201,409);
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_decisions",Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isEqualTo(3);
+    }
+
+    @Test
+    void concurrentDecisionRetriesReturnOneImmutableResult() throws Exception {
+        var fixture=submittedFixture();String reviewer=operatorToken("partner-a","operator-1");CountDownLatch start=new CountDownLatch(1);
+        try(var pool=Executors.newVirtualThreadPerTaskExecutor()){
+            var a=pool.submit(()->{start.await();return decideKyc(fixture.get(0),fixture.get(1),APPROVAL,"same",reviewer);});
+            var b=pool.submit(()->{start.await();return decideKyc(fixture.get(0),fixture.get(1),APPROVAL,"same",reviewer);});
+            start.countDown();var x=a.get(20,TimeUnit.SECONDS);var y=b.get(20,TimeUnit.SECONDS);
+            assertThat(x.statusCode()).isEqualTo(201);assertThat(y.statusCode()).isEqualTo(201);assertThat(x.body()).isEqualTo(y.body());
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_decisions",Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void rejectedProfileCanBeCorrectedAndResubmittedWithoutAnOldReplayOverwritingIt() throws Exception {
+        var fixture=submittedFixture();UUID id=fixture.get(0),old=fixture.get(1);String reviewer=operatorToken("partner-a","operator-1");
+        var decision=decideKyc(id,old,REJECTION,"reject",reviewer);assertThat(decision.statusCode()).isEqualTo(201);
+        assertThat(patchProfile(id,"{\"city\":\"Corrected City\"}","\"3\"",token("partner-a")).statusCode()).isEqualTo(200);
+        var next=submitKyc(id,DOCUMENTS.replace("vault-document-1","vault-document-2"),"resubmit","\"4\"",scopedToken("partner-a","kyc:submit"));
+        assertThat(next.statusCode()).isEqualTo(201);
+        assertThat(decideKyc(id,old,REJECTION,"reject",reviewer).body()).isEqualTo(decision.body());
+        assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers",String.class)).isEqualTo("UNDER_REVIEW");
+        assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isEqualTo(5);
+        var history=json.readTree(readKyc(id,old,scopedToken("partner-a","kyc:read")).body());
+        assertThat(history.get("status").asString()).isEqualTo("REJECTED");
+        assertThat(history.get("profile").get("city").asString()).isEqualTo("Bamako");
+    }
+
+    @Test
+    void failedDecisionRequestPersistenceRollsBackDecisionAndCustomerStatus() throws Exception {
+        var fixture=submittedFixture();
+        jdbc.execute("CREATE FUNCTION reject_decision_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Injected failure'; END $$");
+        jdbc.execute("CREATE TRIGGER reject_decision_test BEFORE INSERT ON kyc_decision_requests FOR EACH ROW EXECUTE FUNCTION reject_decision_test()");
+        try{
+            assertThat(decideKyc(fixture.get(0),fixture.get(1),APPROVAL,"rollback",operatorToken("partner-a","operator-1")).statusCode()).isEqualTo(503);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM kyc_decisions",Integer.class)).isZero();
+            assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers",String.class)).isEqualTo("UNDER_REVIEW");
+            assertThat(jdbc.queryForObject("SELECT profile_version FROM customers",Long.class)).isEqualTo(2);
+        }finally{jdbc.execute("DROP TRIGGER reject_decision_test ON kyc_decision_requests");jdbc.execute("DROP FUNCTION reject_decision_test()");}
+    }
+
+    @Test
+    void upgradesMinimalLegacyCustomersWithoutChangingCreationReplaySnapshots() {
+        String schema="customer_upgrade_"+UUID.randomUUID().toString().replace("-","");UUID id=UUID.randomUUID();
+        String snapshot="{\"id\":\""+id+"\",\"externalReference\":\"legacy\",\"firstName\":\"Awa\",\"lastName\":\"Test\",\"phoneNumber\":\"+22370000008\",\"kycStatus\":\"PENDING\",\"createdAt\":\"2026-01-01T00:00:00Z\"}";
+        try{
+            org.flywaydb.core.Flyway.configure().dataSource(postgres.getJdbcUrl(),postgres.getUsername(),postgres.getPassword())
+                    .schemas(schema).defaultSchema(schema).locations("classpath:db/migration").target("1").load().migrate();
+            jdbc.update("INSERT INTO "+schema+".customers (id,integrator_id,external_reference,first_name,last_name,phone_number) VALUES (?,?,?,?,?,?)",id,"legacy-partner","legacy","Awa","Test","+22370000008");
+            jdbc.update("INSERT INTO "+schema+".customer_creation_requests (integrator_id,idempotency_key,request_fingerprint,customer_id,creation_response) VALUES (?,?,?,?,?::jsonb)","legacy-partner","legacy-key","0".repeat(64),id,snapshot);
+            org.flywaydb.core.Flyway.configure().dataSource(postgres.getJdbcUrl(),postgres.getUsername(),postgres.getPassword())
+                    .schemas(schema).defaultSchema(schema).locations("classpath:db/migration").load().migrate();
+            assertThat(jdbc.queryForObject("SELECT profile_version FROM "+schema+".customers",Long.class)).isZero();
+            assertThat(jdbc.queryForObject("SELECT kyc_status FROM "+schema+".customers",String.class)).isEqualTo("PENDING");
+            assertThat(json.readTree(jdbc.queryForObject("SELECT creation_response::text FROM "+schema+".customer_creation_requests",String.class))).isEqualTo(json.readTree(snapshot));
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM "+schema+".kyc_decisions",Integer.class)).isZero();
+        }finally{jdbc.execute("DROP SCHEMA IF EXISTS "+schema+" CASCADE");}
+    }
+
+    private List<UUID> submittedFixture()throws Exception {
+        UUID id=completeProfileFixture();var submitted=submitKyc(id,DOCUMENTS,"review-fixture","\"1\"",scopedToken("partner-a","kyc:submit"));
+        assertThat(submitted.statusCode()).isEqualTo(201);return List.of(id,UUID.fromString(json.readTree(submitted.body()).get("id").asString()));
+    }
+    private String operatorToken(String partner,String actor)throws Exception {return actorToken(partner,"kyc:review",actor,"operator");}
+    private HttpResponse<String> decideKyc(UUID id,UUID submission,String body,String key,String auth)throws Exception {
+        var request=HttpRequest.newBuilder(uri("/v1/customers/"+id+"/kyc-submissions/"+submission+"/decisions"))
+                .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(body));
+        if(key!=null)request.header("Idempotency-Key",key);if(auth!=null)request.header("Authorization","Bearer "+auth);
+        return HTTP.send(request.build(),HttpResponse.BodyHandlers.ofString());
     }
 
     private void assertCounts(int expected) {
