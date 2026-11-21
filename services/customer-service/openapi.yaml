@@ -276,6 +276,49 @@ paths:
         '428': {description: If-Match required}
         '503': {description: Storage unavailable}
   /v1/customers/{customerId}/kyc-submissions:
+    get:
+      operationId: listCustomerKycSubmissions
+      summary: List historical and active KYC submission summaries
+      description: Requires kyc:read. Live UUID order; each status comes from its own decision. No profile, evidence or actor data.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema: {type: string, format: uuid}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - in: query
+          name: after
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Dossier summaries, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextAfter]
+                properties:
+                  nextAfter: {type: [string, 'null'], format: uuid}
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required: [id, profileVersion, status, submittedAt]
+                      properties:
+                        id: {type: string, format: uuid}
+                        profileVersion: {type: integer, format: int64}
+                        status: {type: string, enum: [UNDER_REVIEW, APPROVED, REJECTED]}
+                        submittedAt: {type: string, format: date-time}
+        '400': {description: Invalid identifiers or pagination}
+        '401': {description: Missing or invalid bearer identity}
+        '403': {description: Missing kyc:read scope}
+        '404': {description: Unknown or foreign customer}
+        '503': {description: Customer storage unavailable}
     post:
       operationId: submitCustomerKyc
       summary: Submit a complete profile and immutable evidence references for review
