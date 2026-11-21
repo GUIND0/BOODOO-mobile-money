@@ -30,6 +30,16 @@ public class PinRepository {
                 row.getObject(4, OffsetDateTime.class).toInstant()), integrator, key).stream().findFirst();
     }
 
+    public Optional<Credential> findCredential(String integrator, UUID customer) {
+        return jdbc.query("SELECT pin_hash, pepper_version FROM customer_pins WHERE integrator_id = ? AND customer_id = ?",
+                (row, index) -> new Credential(row.getString(1), row.getString(2)), integrator, customer).stream().findFirst();
+    }
+
+    public record Credential(String hash, String version) {
+        @Override
+        public String toString() { return "Credential[REDACTED]"; }
+    }
+
     public boolean exists(String integrator, UUID customer) {
         return Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM customer_pins WHERE integrator_id = ? AND customer_id = ?)",

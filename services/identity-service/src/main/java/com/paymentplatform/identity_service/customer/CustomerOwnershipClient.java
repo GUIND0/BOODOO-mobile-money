@@ -34,6 +34,6 @@ public class CustomerOwnershipClient {
 
     private PinApiException unavailable() {
         return new PinApiException(HttpStatus.SERVICE_UNAVAILABLE, "OWNERSHIP_UNAVAILABLE",
-                "Customer ownership could not be verified. No PIN was created.");
+                "Customer ownership could not be verified. The PIN operation was not performed.");
     }
 }

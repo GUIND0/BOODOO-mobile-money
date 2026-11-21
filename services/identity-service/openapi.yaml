@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BOODOO Transaction PIN API
   version: 0.1.0
-  description: First PIN setup only. No OTP, PIN verification/change/recovery, or KYC approval.
+  description: First PIN setup and verification. No OTP, PIN change/recovery, payment authorization or KYC approval.
 paths:
   /v1/customers/{customerId}/pin:
     post:
@@ -12,7 +12,8 @@ paths:
         Requires pins:create and customers:ownership:read, a trusted integrator_id, and
         audiences for Identity and Customer Services. Customer ownership is checked through
         Customer Service, including on replay. Ten confirmed-ownership setup attempts per
-        integrator/customer per 15-minute window include replays and conflicts.
+        integrator/customer per 15-minute window include replays and conflicts. Sensitive creation
+        replays also share verification's five-failure lock and thirty-comparison budget.
       security:
         - partnerBearer: []
       parameters:
@@ -77,7 +78,7 @@ paths:
         '415':
           description: Use Content-Type application/json
         '429':
-          description: PIN_SETUP_RATE_LIMITED
+          description: PIN_SETUP_RATE_LIMITED, PIN_VERIFICATION_LOCKED or PIN_VERIFICATION_RATE_LIMITED
           headers:
             Retry-After:
               schema:
@@ -89,6 +90,74 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /v1/customers/{customerId}/pin/verify:
+    post:
+      operationId: verifyCustomerPin
+      summary: Verify a transaction PIN without changing it
+      description: >-
+        Requires pins:verify and customers:ownership:read, the trusted integrator_id, and both
+        service audiences. Fresh ownership is checked. A 204 confirms the PIN only, not a
+        transaction authorization. Five consecutive failures lock comparisons for 15 minutes;
+        thirty comparisons per customer/integrator per 15-minute window are allowed. Counters
+        and lockout are shared with sensitive creation replays. Idempotency keys do not deduplicate attempts.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [pin]
+              properties:
+                pin:
+                  type: string
+                  writeOnly: true
+                  pattern: '^[0-9]{6}$'
+                  description: Exact six-digit string; leading zeros preserved; no strength-policy filtering
+                  example: '739152'
+      responses:
+        '204':
+          description: PIN matches; empty response, no token or authorization grant
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid UUID, PIN format or unknown fields
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing pins:verify or customers:ownership:read scope
+        '404':
+          description: CUSTOMER_NOT_FOUND or PIN_NOT_CONFIGURED
+        '415':
+          description: Use application/json
+        '422':
+          description: PIN_INVALID; failure is persisted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: PIN_VERIFICATION_LOCKED or PIN_VERIFICATION_RATE_LIMITED
+          headers:
+            Retry-After:
+              description: Conservative retry delay; does not reset lockout
+              schema:
+                type: integer
+                const: 900
+        '503':
+          description: OWNERSHIP_UNAVAILABLE, PIN_KEY_UNAVAILABLE or PIN_VERIFICATION_UNAVAILABLE
 components:
   securitySchemes:
     partnerBearer:
@@ -97,7 +166,7 @@ components:
       bearerFormat: JWT
       description: >-
         RS256 token from the trusted issuer, with integrator_id, exp, both intended service
-        audiences, and scopes pins:create and customers:ownership:read. The token is relayed
+        audiences, and the endpoint scope (pins:create or pins:verify) plus customers:ownership:read. The token is relayed
         only to the configured Customer Service ownership endpoint; no PIN is forwarded.
   schemas:
     PinCreation:
@@ -132,4 +201,5 @@ components:
           type: string
           enum: [INVALID_REQUEST, UNSUPPORTED_MEDIA_TYPE, CUSTOMER_NOT_FOUND, OWNERSHIP_FORBIDDEN,
                  OWNERSHIP_UNAVAILABLE, PIN_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, PIN_SETUP_RATE_LIMITED,
-                 PIN_CREATION_UNAVAILABLE, PIN_KEY_UNAVAILABLE]
+                 PIN_CREATION_UNAVAILABLE, PIN_KEY_UNAVAILABLE, PIN_NOT_CONFIGURED, PIN_INVALID,
+                 PIN_VERIFICATION_LOCKED, PIN_VERIFICATION_RATE_LIMITED, PIN_VERIFICATION_UNAVAILABLE]

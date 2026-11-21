@@ -48,6 +48,7 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/v1/customers/*/pin").hasAuthority("SCOPE_pins:create")
+                        .requestMatchers(HttpMethod.POST, "/v1/customers/*/pin/verify").hasAuthority("SCOPE_pins:verify")
                         .anyRequest().denyAll())
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable()).formLogin(form -> form.disable())

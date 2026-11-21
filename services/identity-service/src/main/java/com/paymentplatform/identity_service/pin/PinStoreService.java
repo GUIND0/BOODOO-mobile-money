@@ -7,21 +7,21 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.UUID;
 
 @Service
 public class PinStoreService {
     private final PinRepository repository;
     private final PinProtector protector;
+    private final PinVerificationStore verification;
 
-    public PinStoreService(PinRepository repository, PinProtector protector) {
+    public PinStoreService(PinRepository repository, PinProtector protector, PinVerificationStore verification) {
         this.repository = repository;
         this.protector = protector;
+        this.verification = verification;
     }
 
-    @Transactional(timeout = 10)
+    @Transactional(noRollbackFor = PinApiException.class, timeout = 10)
     public Creation create(String integrator, UUID customer, String key, String pin) {
         repository.lock("pin-key", integrator, key);
         var saved = repository.findCreation(integrator, key);
@@ -29,11 +29,10 @@ public class PinStoreService {
             var previous = saved.get();
             if (!previous.version().equals(protector.version())) throw new PinApiException(HttpStatus.SERVICE_UNAVAILABLE,
                     "PIN_KEY_UNAVAILABLE", "The PIN protection key version is unavailable for this request.");
-            if (!previous.customer().equals(customer) || !MessageDigest.isEqual(
-                    previous.fingerprint().getBytes(StandardCharsets.US_ASCII),
-                    protector.fingerprint(integrator, customer, pin).getBytes(StandardCharsets.US_ASCII))) {
+            if (!previous.customer().equals(customer)) {
                 throw new PinApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT", "This key was used with a different PIN setup request.");
             }
+            verification.verifyCreationReplay(integrator, customer, pin, previous.fingerprint());
             return new Creation(new PinResponse(customer, "CREATED", previous.createdAt()), true);
         }
         repository.lock("pin-customer", integrator, customer.toString());
