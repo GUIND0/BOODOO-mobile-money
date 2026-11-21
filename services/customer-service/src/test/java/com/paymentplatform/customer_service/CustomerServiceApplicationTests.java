@@ -319,6 +319,50 @@ class CustomerServiceApplicationTests {
         return HTTP.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    @Test
+    void readsCurrentProfileWithReadScopeAndNoCache() throws Exception {
+        var created = post(PROFILE, "read", token("partner-a"));
+        UUID id = UUID.fromString(json.readTree(created.body()).get("id").asString());
+        var read = readProfile(id, scopedToken("partner-a", "customers:read"));
+        assertThat(read.statusCode()).isEqualTo(200);
+        assertThat(read.body()).isEqualTo(created.body());
+        assertThat(read.headers().firstValue("Cache-Control").orElse("")).contains("no-store");
+        assertThat(read.headers().firstValue("Set-Cookie")).isEmpty();
+        jdbc.update("UPDATE customers SET first_name = 'Changed' WHERE id = ?", id);
+        assertThat(json.readTree(readProfile(id, scopedToken("partner-a", "customers:read")).body()).get("firstName").asString()).isEqualTo("Changed");
+        assertThat(post(PROFILE, "read", token("partner-a")).body()).isEqualTo(created.body());
+    }
+
+    @Test
+    void profileReadDoesNotRevealForeignOrMissingCustomers() throws Exception {
+        UUID id = UUID.fromString(json.readTree(post(PROFILE, "read", token("partner-a")).body()).get("id").asString());
+        var foreign = readProfile(id, scopedToken("partner-b", "customers:read"));
+        var missing = readProfile(UUID.randomUUID(), scopedToken("partner-b", "customers:read"));
+        assertThat(foreign.statusCode()).isEqualTo(404);
+        assertThat(json.readTree(foreign.body()).get("code").asString()).isEqualTo("CUSTOMER_NOT_FOUND");
+        assertThat(json.readTree(missing.body()).get("code").asString()).isEqualTo("CUSTOMER_NOT_FOUND");
+        assertThat(foreign.body()).doesNotContain("Awa", "+22370000001", "user-001");
+    }
+
+    @Test
+    void profileReadRequiresAuthenticationItsOwnScopeAndAValidUuid() throws Exception {
+        assertThat(readProfile(UUID.randomUUID(), null).statusCode()).isEqualTo(401);
+        assertThat(readProfile(UUID.randomUUID(), token("partner-a")).statusCode()).isEqualTo(403);
+        var request = HttpRequest.newBuilder(uri("/v1/customers/not-a-uuid"))
+                .header("Authorization", "Bearer " + scopedToken("partner-a", "customers:read")).GET().build();
+        assertThat(HTTP.send(request, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(400);
+    }
+
+    private String scopedToken(String partner, String scopes) throws Exception {
+        return signedToken(SIGNING_KEY, ISSUER, AUDIENCE, partner, scopes, Instant.now().plusSeconds(300));
+    }
+
+    private HttpResponse<String> readProfile(UUID customer, String token) throws Exception {
+        var builder = HttpRequest.newBuilder(uri("/v1/customers/" + customer)).GET();
+        if (token != null) builder.header("Authorization", "Bearer " + token);
+        return HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     private void assertCounts(int expected) {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM customers", Integer.class)).isEqualTo(expected);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM customer_creation_requests", Integer.class)).isEqualTo(expected);
