@@ -326,6 +326,53 @@ paths:
         '404': {description: Missing or foreign customer or dossier}
         '409': {description: Already decided, stale dossier, expired approval evidence or conflicting key}
         '503': {description: Storage unavailable}
+  /v1/kyc-review-queue:
+    get:
+      operationId: listKycReviewQueue
+      summary: List active dossiers available to the authenticated review operator
+      description: >-
+        Requires kyc:review, signed actor_type operator and a stable subject. Tenant-scoped;
+        excludes own submissions, finalized dossiers and stale frozen revisions.
+        Returns metadata only. Read a dossier separately with kyc:read.
+        Live UUID-ordered pagination, not a reservation or approval eligibility guarantee.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - in: query
+          name: after
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Current queue metadata, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextAfter]
+                properties:
+                  nextAfter: {type: [string, 'null'], format: uuid}
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required: [submissionId, customerId, profileVersion, submittedAt]
+                      properties:
+                        submissionId: {type: string, format: uuid}
+                        customerId: {type: string, format: uuid}
+                        profileVersion: {type: integer, format: int64}
+                        submittedAt: {type: string, format: date-time}
+        '400':
+          description: Invalid limit or cursor
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing review scope, operator claim or stable subject
+        '503':
+          description: Customer storage temporarily unavailable
 components:
   securitySchemes:
     partnerBearer:
