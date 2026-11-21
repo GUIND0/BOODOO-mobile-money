@@ -107,7 +107,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Customer'
+                $ref: '#/components/schemas/Profile'
         '400':
           description: Invalid UUID
         '401':
@@ -118,6 +118,43 @@ paths:
           description: CUSTOMER_NOT_FOUND
         '503':
           description: CUSTOMER_OPERATION_UNAVAILABLE
+    patch:
+      operationId: updateCustomerProfile
+      summary: Complete an integrator-owned profile with optimistic concurrency
+      description: Requires customers:write and a stable JWT sub. Omitted/null fields remain unchanged.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema: {type: string, format: uuid}
+        - in: header
+          name: If-Match
+          required: true
+          description: Strong quoted profile revision returned by GET
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfilePatch'
+      responses:
+        '200':
+          description: Current enriched profile with ETag and no-store caching
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '400': {description: Invalid fields or ETag}
+        '401': {description: Invalid bearer identity}
+        '403': {description: Missing write scope or actor}
+        '404': {description: Missing or foreign customer}
+        '409': {description: Profile frozen by KYC}
+        '412': {description: Stale profile revision}
+        '428': {description: If-Match required}
+        '503': {description: Storage unavailable}
 components:
   securitySchemes:
     partnerBearer:
@@ -188,4 +225,36 @@ components:
           type: string
         code:
           type: string
-          enum: [INVALID_REQUEST, CUSTOMER_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, CUSTOMER_CREATION_UNAVAILABLE, UNSUPPORTED_MEDIA_TYPE, CUSTOMER_NOT_FOUND, CUSTOMER_OPERATION_UNAVAILABLE]
+          enum: [INVALID_REQUEST, CUSTOMER_ALREADY_EXISTS, IDEMPOTENCY_CONFLICT, CUSTOMER_CREATION_UNAVAILABLE, UNSUPPORTED_MEDIA_TYPE, CUSTOMER_NOT_FOUND, CUSTOMER_OPERATION_UNAVAILABLE, PRECONDITION_REQUIRED, PROFILE_VERSION_CONFLICT, PROFILE_LOCKED_FOR_KYC, ACTOR_REQUIRED]
+
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [id, externalReference, firstName, lastName, phoneNumber, kycStatus, createdAt, version, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        externalReference: {type: string}
+        firstName: {type: string}
+        lastName: {type: string}
+        phoneNumber: {type: string}
+        kycStatus: {type: string, enum: [PENDING, UNDER_REVIEW, APPROVED, REJECTED]}
+        createdAt: {type: string, format: date-time}
+        version: {type: integer, minimum: 0}
+        updatedAt: {type: string, format: date-time}
+        dateOfBirth: {type: [string, 'null'], format: date}
+        nationality: {type: [string, 'null']}
+        residenceCountry: {type: [string, 'null']}
+        addressLine: {type: [string, 'null']}
+        city: {type: [string, 'null']}
+    ProfilePatch:
+      type: object
+      additionalProperties: false
+      description: At least one non-null field; dates in past, countries real ISO alpha-2 codes
+      properties:
+        firstName: {type: [string, 'null'], minLength: 1, maxLength: 100}
+        lastName: {type: [string, 'null'], minLength: 1, maxLength: 100}
+        dateOfBirth: {type: [string, 'null'], format: date}
+        nationality: {type: [string, 'null']}
+        residenceCountry: {type: [string, 'null']}
+        addressLine: {type: [string, 'null'], minLength: 1, maxLength: 200}
+        city: {type: [string, 'null'], minLength: 1, maxLength: 100}
