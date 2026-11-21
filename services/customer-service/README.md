@@ -1,8 +1,8 @@
 # Customer Service
 
-Customer Service exposes BOODOO customer profiles to integrating applications. The first implemented feature is `POST /v1/customers`: create a minimal profile with KYC status `PENDING`.
+Customer Service exposes creation, partner-scoped profile retrieval/completion, KYC submission and explicit operator review APIs. New customers start with KYC status `PENDING`.
 
-Integrators own end-user onboarding, OTP delivery, and OTP verification. This API performs no OTP operation, does not assert phone ownership, and does not create a PIN, wallet, or approved KYC record.
+Integrators own end-user onboarding, OTP delivery, and OTP verification. Customer creation performs no OTP operation, does not assert phone ownership, and does not create a PIN/wallet or approve KYC.
 
 ## Run locally
 
@@ -37,9 +37,9 @@ Required token claims:
 - `aud`: contains the configured audience, default `boodoo-customer-api`.
 - `exp`: an expiration accepted by the timestamp validator. Spring Security's standard clock-skew allowance applies.
 - `integrator_id`: a stable partner identifier matching `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
-- `scope`: includes `customers:write`.
+- `scope`: contains the endpoint-specific customer or KYC permission documented below. Operator review additionally requires a trusted operator claim and an independent subject.
 
-Only `GET /actuator/health` is public. Authorized customer creation, profile reads and scoped internal ownership requests reach business code; other endpoints remain denied. Sessions, form login, HTTP Basic, generated development users, and logout are disabled. CSRF is disabled for this stateless bearer-token API, which does not accept cookie authentication. No token issuer or development signing key is supplied.
+Only `GET /actuator/health` is public. Only the explicitly scoped customer/profile, KYC and internal ownership endpoints reach business code; other endpoints remain denied. Sessions, form login, HTTP Basic, generated development users, and logout are disabled. CSRF is disabled for this stateless bearer-token API, which does not accept cookie authentication. No token issuer or development signing key is supplied.
 
 See [Spring Security resource-server JWT validation](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html) and [OWASP partner isolation guidance](https://cheatsheetseries.owasp.org/cheatsheets/Multi_Tenant_Security_Cheat_Sheet.html).
 
@@ -59,7 +59,7 @@ The profile above is illustrative test data. All four fields are required. Exter
 
 The caller cannot supply `id`, `integratorId`, `kycStatus`, `phoneVerified`, or `pin`. Unknown properties are rejected. Integrator ownership comes solely from the validated token, never from a submitted header or body field.
 
-Success: `201 Created`, with `Idempotency-Replayed: false` on first creation and `true` on replay. The response contains `id` (UUID), `externalReference`, `firstName`, `lastName`, `phoneNumber`, `kycStatus: PENDING`, and `createdAt` (UTC timestamp). Profile update and KYC-submission endpoints will follow separately.
+Success: `201 Created`, with `Idempotency-Replayed: false` on first creation and `true` on replay. The response contains `id` (UUID), `externalReference`, `firstName`, `lastName`, `phoneNumber`, `kycStatus: PENDING`, and `createdAt` (UTC timestamp). Profile completion and KYC workflows are documented below.
 
 ## Duplicates and idempotency
 
@@ -94,7 +94,7 @@ Application validation/conflict/database errors use `application/problem+json` w
 
 Tests run against real PostgreSQL 17 through Testcontainers and use an in-process JWK endpoint with ephemeral RSA keys. They verify migration, signed-token validation, partner isolation, validation, duplicate detection, normalized replay, immutable response snapshots, concurrent requests, and rollback/retry after an injected persistence failure. No production identity provider, SMS provider, credentials, or real customer data are used.
 
-PIN setup, profile enrichment, KYC submission/review, audit-event integration, and Gateway routing will be delivered separately.
+Transaction PINs belong to Identity Service. Audit-event integration and Gateway routing remain separate work.
 
 ## Internal ownership contract
 
