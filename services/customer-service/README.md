@@ -102,6 +102,12 @@ Transaction PINs belong to Identity Service. Audit-event integration and Gateway
 
 Identity Service uses this endpoint before transaction-PIN setup. Its caller token must be intended for both APIs and contain the ownership-read scope in addition to `pins:create`; Identity relays that token to Customer Service instead of sharing database access or accepting a tenant header. The trusted authorization server must provision these permissions. This endpoint grants no customer-update or PIN-management permission by itself.
 
+## List customers
+
+`GET /v1/customers?limit=50&kycStatus=PENDING` requires `customers:read`. Results contain only the authenticated integrator's customer summaries (ID, external reference, names, KYC status and creation time), without phone, address or evidence. Responses use `Cache-Control: no-store`.
+
+`limit` defaults to 50 and must be 1–100. Optional `kycStatus` accepts PENDING, UNDER_REVIEW, APPROVED or REJECTED. Items are ordered by ascending UUID, not creation time. Pass the returned `nextAfter` UUID as `after` for the next page, keeping the same filter; null means no further matching row at query time. Invalid parameters return 400. A cursor need not belong to a customer and never grants access to another tenant. This is a live list: concurrent inserts or status changes can appear or disappear between pages, so pagination is not a snapshot or an export.
+
 ## Read a customer profile
 
 `GET /v1/customers/{customerId}` requires `customers:read`. The integrator comes from the validated JWT. It returns the current profile and KYC status with `200` and `Cache-Control: no-store`, rather than the historical creation snapshot. Foreign and missing customers both return `404 CUSTOMER_NOT_FOUND` without profile data. Missing authentication returns 401; creation scope alone does not grant read access. Malformed UUIDs return 400. Storage errors return 503 without database diagnostics.
