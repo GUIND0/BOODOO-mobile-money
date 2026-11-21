@@ -137,6 +137,50 @@ paths:
           description: Missing customers:ownership:read scope
         '404':
           description: Customer missing or foreign; empty response
+  /v1/customers/{customerId}/profile-history:
+    get:
+      operationId: listCustomerProfileHistory
+      summary: Read immutable manual profile-edit metadata
+      description: Requires customers:audit:read, signed operator claim and stable subject. No profile values; excludes KYC transitions.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema: {type: string, format: uuid}
+        - in: query
+          name: limit
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+        - in: query
+          name: afterVersion
+          schema: {type: integer, format: int64, minimum: 0, default: 0}
+      responses:
+        '200':
+          description: Revision-ordered metadata with Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextAfterVersion]
+                properties:
+                  nextAfterVersion: {type: [integer, 'null'], format: int64}
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required: [version, actorId, changedFields, changedAt]
+                      properties:
+                        version: {type: integer, format: int64}
+                        actorId: {type: string}
+                        changedFields: {type: array, items: {type: string}}
+                        changedAt: {type: string, format: date-time}
+        '400': {description: Invalid identifiers or pagination}
+        '401': {description: Missing or invalid bearer identity}
+        '403': {description: Missing audit scope or operator identity}
+        '404': {description: Unknown or foreign customer}
+        '503': {description: Customer storage unavailable}
   /v1/customers/{customerId}:
     get:
       operationId: getCustomer
