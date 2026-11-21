@@ -51,6 +51,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.PATCH, "/v1/customers/*").hasAuthority("SCOPE_customers:write")
                         .requestMatchers(HttpMethod.POST, "/v1/customers/*/kyc-submissions").hasAuthority("SCOPE_kyc:submit")
                         .requestMatchers(HttpMethod.GET, "/v1/customers/*/kyc-submissions/*").hasAuthority("SCOPE_kyc:read")
+                        .requestMatchers(HttpMethod.POST, "/v1/customers/*/kyc-submissions/*/decisions").hasAuthority("SCOPE_kyc:review")
                         .requestMatchers(HttpMethod.GET, "/internal/v1/customers/*/ownership")
                         .hasAuthority("SCOPE_customers:ownership:read")
                         .anyRequest().denyAll())
