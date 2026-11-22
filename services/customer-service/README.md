@@ -100,6 +100,14 @@ Transaction PINs belong to Identity Service. Audit-event integration and Gateway
 
 `GET /v1/customers/by-reference?externalReference=user-001` requires `customers:read` and returns the current profile with the same ETag and no-store caching as UUID lookup. The reference is case-sensitive, trimmed and limited to 128 characters. Encode it as a URL query value. Unknown references and references owned only by another integrator both return 404 CUSTOMER_NOT_FOUND. Partner identity always comes from the signed JWT. This exact lookup helps integrators recover a customer UUID without scanning pages or recreating a customer; it does not grant additional profile permissions.
 
+## Internal current KYC approval
+
+`GET /internal/v1/customers/{customerId}/kyc-approval` requires `customers:kyc:read`, a trusted signed `actor_type: service` claim and a stable subject. The issuer must restrict these grants to provisioned service principals. Tenant ownership is always derived from the JWT. Unknown and foreign customers return the same 404; regular customer/KYC read scopes do not grant access.
+
+The response contains customer ID, stored KYC status, current profile revision, active decision ID/review time (nullable), `approvalCurrent` and UTC `checkedAt`. A single SQL snapshot joins the active dossier and its own decision. Approval is current only when both customer and active decision are APPROVED, the profile retains the submitted revision plus submission/review increments, and the evidence is present with no expired document as of the checked UTC day. Expiry is inclusive: evidence remains valid on its expiry date. An expiry later than approval makes the flag false without rewriting historical decisions or the stored KYC status.
+
+No profile, evidence references, actor identity or reason is exposed. Responses use no-store caching. Invalid UUID returns 400, insufficient scope/service identity 403, storage failure 503. This point-in-time read is an input for future activation policy, not a reservation, regulatory certification, PIN verification, financial authorization or wallet activation. Consumers must handle dependency failures and re-evaluate policy at their own controlled decision boundary; no distributed transaction or validity lease is provided.
+
 ## Internal ownership contract
 
 `GET /internal/v1/customers/{customerId}/ownership` requires a valid customer-audience token with scope `customers:ownership:read`. It derives the integrator from the validated token, returning `204` with an empty body only when that customer belongs to the integrator. Unknown and foreign customers both return empty `404` responses. It exposes no profile data and does not change KYC status.
