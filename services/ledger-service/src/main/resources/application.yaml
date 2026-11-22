@@ -6,10 +6,9 @@ spring:
     username: ${LEDGER_DB_USER:ledger_user}
     password: ${LEDGER_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   flyway:
     enabled: true
 
@@ -24,3 +23,9 @@ management:
   endpoint:
     health:
       show-details: never
+
+boodoo:
+  security:
+    issuer: ${LEDGER_JWT_ISSUER_URI}
+    jwk-set-uri: ${LEDGER_JWT_JWK_SET_URI}
+    audience: ${LEDGER_JWT_AUDIENCE:boodoo-ledger-api}

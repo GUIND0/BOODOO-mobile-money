@@ -1,0 +1,103 @@
+openapi: 3.1.0
+info:
+  title: BOODOO Ledger Accounts API
+  version: 0.1.0
+  description: Immutable XOF chart-of-accounts metadata. No journals, balances, posting, wallet activation or movement of funds.
+paths:
+  /internal/v1/accounts:
+    post:
+      operationId: createLedgerAccount
+      summary: Create immutable accounting account metadata
+      description: >-
+        Requires ledger:accounts:write, trusted integrator_id, signed actor_type service and a stable subject.
+        Code and currency are trimmed and uppercased. The normal balance side derives from account type.
+        Idempotency is scoped by tenant and bound to account details plus service subject.
+      security:
+        - serviceBearer: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code, currency, type]
+              properties:
+                code:
+                  type: string
+                  description: Opaque identifier matching uppercase A-Z followed by up to 63 uppercase letters, digits, underscores or hyphens after normalization
+                  examples: [SETTLEMENT_CASH]
+                currency:
+                  type: string
+                  description: XOF after trimming and uppercasing
+                  examples: [XOF]
+                type: {$ref: '#/components/schemas/AccountType'}
+      responses:
+        '201':
+          description: Account created or original snapshot replayed; Cache-Control no-store
+          headers:
+            Location:
+              schema: {type: string, format: uri-reference}
+            Idempotency-Replayed:
+              schema: {type: boolean}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Account'}
+        '400': {description: Invalid account details or idempotency key}
+        '401': {description: Missing or invalid bearer identity or audience}
+        '403': {description: Missing write scope or trusted service identity}
+        '409': {description: IDEMPOTENCY_CONFLICT or ACCOUNT_ALREADY_EXISTS}
+        '415': {description: Unsupported request content type}
+        '503': {description: Storage unavailable; retry creation with the original key}
+  /internal/v1/accounts/{accountId}:
+    get:
+      operationId: getLedgerAccount
+      summary: Read account metadata in the authenticated tenant
+      description: Requires ledger:accounts:read, signed actor_type service and a stable subject. No accounting balance is returned.
+      security:
+        - serviceBearer: []
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Account metadata, Cache-Control no-store
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Account'}
+        '400': {description: Invalid account UUID}
+        '401': {description: Missing or invalid bearer identity}
+        '403': {description: Missing read scope or trusted service identity}
+        '404': {description: Unknown or foreign account}
+        '503': {description: Storage unavailable}
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AccountType:
+      type: string
+      enum: [ASSET, LIABILITY, EQUITY, INCOME, EXPENSE]
+    Account:
+      type: object
+      additionalProperties: false
+      required: [id, code, currency, type, normalBalance, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string, pattern: '^[A-Z][A-Z0-9_-]{0,63}$'}
+        currency: {type: string, enum: [XOF]}
+        type: {$ref: '#/components/schemas/AccountType'}
+        normalBalance:
+          type: string
+          enum: [DEBIT, CREDIT]
+          description: Normal accounting side derived from type, not a monetary balance
+        createdAt: {type: string, format: date-time}
