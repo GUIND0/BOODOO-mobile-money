@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: Reconciliation Service — frozen internal integrity checks
+  version: 0.1.0
+paths:
+  /internal/v1/reconciliations:
+    post:
+      operationId: createInternalIntegrityReport
+      description: Service-only reconciliation:checks:write; required Idempotency-Key. Relayed token also needs ledger audience and ledger:reconciliation:read. No request body.
+      security: [{serviceBearer: []}]
+      responses:
+        '201': {description: Frozen CONSISTENT or DISCREPANCY report with counts and observation timestamps}
+        '409': {description: Key belongs to another service subject}
+        '503': {description: Invalid or unavailable ledger snapshot; no report created}
+  /internal/v1/reconciliations/{id}:
+    get:
+      operationId: getIntegrityReport
+      description: Service-only reconciliation:checks:read; no-store immutable historical report.
+      security: [{serviceBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Frozen report}
+        '404': {description: Unknown or foreign report}
+components:
+  securitySchemes:
+    serviceBearer: {type: http, scheme: bearer, bearerFormat: JWT}

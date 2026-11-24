@@ -6,10 +6,9 @@ spring:
     username: ${RECONCILIATION_DB_USER:reconciliation_user}
     password: ${RECONCILIATION_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   flyway:
     enabled: true
 
@@ -24,3 +23,12 @@ management:
   endpoint:
     health:
       show-details: never
+
+boodoo:
+  security:
+    issuer: ${RECONCILIATION_JWT_ISSUER_URI}
+    jwk-set-uri: ${RECONCILIATION_JWT_JWK_SET_URI}
+    audience: ${RECONCILIATION_JWT_AUDIENCE:boodoo-reconciliation-api}
+  dependencies:
+    origins:
+      ledger: ${RECONCILIATION_LEDGER_BASE_URL:http://127.0.0.1:8083}

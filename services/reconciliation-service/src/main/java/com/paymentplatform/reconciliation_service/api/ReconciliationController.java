@@ -1,0 +1,7 @@
+package com.paymentplatform.reconciliation_service.api;
+import com.paymentplatform.reconciliation_service.domain.*;import com.paymentplatform.reconciliation_service.security.ServiceActor;import jakarta.validation.constraints.Pattern;import org.springframework.http.*;import org.springframework.security.core.annotation.AuthenticationPrincipal;import org.springframework.security.oauth2.jwt.Jwt;import org.springframework.web.bind.annotation.*;import java.util.UUID;
+@RestController public class ReconciliationController {
+ private final ReconciliationWorkflow workflow;private final ReportStore store;public ReconciliationController(ReconciliationWorkflow workflow,ReportStore store){this.workflow=workflow;this.store=store;}
+ @PostMapping("/internal/v1/reconciliations") ResponseEntity<?> create(@AuthenticationPrincipal Jwt jwt,@RequestHeader("Idempotency-Key") @Pattern(regexp="[A-Za-z0-9][A-Za-z0-9._:-]{0,127}") String key){var result=workflow.check(jwt.getClaimAsString("integrator_id"),ServiceActor.requireService(jwt),key,jwt.getTokenValue());return ResponseEntity.status(201).cacheControl(CacheControl.noStore()).header("Idempotency-Replayed",Boolean.toString(result.replayed())).body(result.response());}
+ @GetMapping("/internal/v1/reconciliations/{id}") ResponseEntity<?> get(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){ServiceActor.requireService(jwt);return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(store.get(jwt.getClaimAsString("integrator_id"),id));}
+}
