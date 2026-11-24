@@ -44,7 +44,7 @@ class PostingGrantTests {
         registry.add("boodoo.security.jwk-set-uri", () -> "http://127.0.0.1:" + KEYS.getAddress().getPort() + "/jwks");
     }
     @BeforeEach void clear() {
-        jdbc.execute("TRUNCATE journal_requests,journal_entries,journals,account_creation_requests,ledger_accounts");
+        jdbc.execute("TRUNCATE journal_requests,journal_entries,journals,account_creation_requests,ledger_accounts CASCADE");
     }
     @AfterAll static void close() { HTTP.close(); KEYS.stop(0); }
 
