@@ -1,0 +1,25 @@
+openapi: 3.1.0
+info:
+  title: Risk Compliance Service — local policy evaluations
+  version: 0.1.0
+paths:
+  /internal/v1/evaluations:
+    post:
+      operationId: evaluateLocalRiskPolicy
+      description: Service-only risk:evaluations:write; body id, reference, customerId UUIDs, positive integer amount and XOF currency. ID is producer-bound idempotency key.
+      security: [{serviceBearer: []}]
+      responses:
+        '201': {description: Immutable ALLOW, REVIEW or DENY snapshot with reason, policy/rules fingerprint and expiry}
+        '409': {description: Assessment ID conflicts with request or producer}
+  /internal/v1/evaluations/{id}:
+    get:
+      operationId: getRiskEvaluation
+      description: Service-only risk:evaluations:read; historical snapshot may be expired.
+      security: [{serviceBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Assessment snapshot}
+        '404': {description: Unknown or foreign assessment}
+components:
+  securitySchemes:
+    serviceBearer: {type: http, scheme: bearer, bearerFormat: JWT}

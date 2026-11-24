@@ -1,0 +1,3 @@
+package com.paymentplatform.risk_compliance_service.domain;
+import jakarta.validation.constraints.*;import org.springframework.validation.annotation.Validated;import org.springframework.boot.context.properties.ConfigurationProperties;import java.util.*;
+@Validated @ConfigurationProperties("boodoo.risk") public record RiskPolicy(@NotBlank @Pattern(regexp="[A-Za-z0-9._-]{1,64}") String version,@NotNull @Positive Long automaticAmount,@NotNull @Min(10) @Max(600) Integer ttlSeconds,Set<UUID> blockedCustomers){public RiskPolicy{blockedCustomers=blockedCustomers==null?Set.of():Set.copyOf(blockedCustomers);}}

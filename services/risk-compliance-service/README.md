@@ -1,58 +1,13 @@
-# Risk Compliance Service
+# Risk Compliance Service — local policy evaluations
 
-Risk Compliance Service will own basic fraud checks, configured compliance rules, screening results, and review alerts.
+Set RISK_POLICY_VERSION, RISK_AUTOMATIC_AMOUNT (positive integer XOF), RISK_EVALUATION_TTL_SECONDS (10–600), and optionally RISK_BLOCKED_CUSTOMERS (comma-separated customer UUIDs). These are operator-provisioned local policy inputs, not legal thresholds. No automatic amount policy is supplied by default. Empty blocked-customers explicitly means no configured local blocks. Bump the version on changes; a deterministic rules fingerprint captures the exact threshold, TTL and configured blocked IDs.
 
-This PR initializes the application only. It does not implement risk schemas, evaluation APIs, screening-provider clients, and investigation workflows.
+POST /internal/v1/evaluations requires risk:evaluations:write and a service identity. Body contains id (assessment UUID/idempotency key), reference (business transaction UUID), customerId, positive amount and XOF currency. Configured blocked customer -> DENY; above automatic amount -> REVIEW; otherwise ALLOW under these local rules only. Exact producer-bound assessment retries replay the original immutable decision, even after expiry or a configuration change; a new assessment requires a new ID. Multiple assessments can refer to one transaction. GET /internal/v1/evaluations/{id} requires risk:evaluations:read.
 
-## Requirements
+No screening provider, sanctions list, legal eligibility assessment, manual override, KYC validation or financial posting is included. ALLOW is not a certification or a reservation. Execution must validate transaction/customer/amount, expiry, authoritative KYC/wallet facts and local policy. A stale assessment never renews by retry; unavailable or REVIEW/DENY decisions must not be treated as approval. Operator configuration changes require deployment controls and audit outside this initial API.
 
-- JDK 25 or later
-- Docker with a running daemon, including for tests
-- Maven is downloaded by the included wrapper
+## Run and verify
 
-## Run locally
+Set `RISK_COMPLIANCE_DB_PASSWORD`, `RISK_COMPLIANCE_JWT_ISSUER_URI` and `RISK_COMPLIANCE_JWT_JWK_SET_URI`, then run `docker compose up -d --wait` and `./mvnw spring-boot:run` from this service. Existing DB/API ports are retained. Flyway owns the schema; JDBC replaces the unused JPA initialization. `./mvnw -o clean verify` exercises real PostgreSQL 17 and ephemeral signed JWTs.
 
-From `services/risk-compliance-service`:
-
-```sh
-export RISK_COMPLIANCE_DB_PASSWORD='choose-a-local-development-password'
-docker compose up -d --wait
-./mvnw spring-boot:run
-```
-
-The application listens on port `8090`; PostgreSQL 17 is exposed on `127.0.0.1:5441`. These defaults avoid the other BOODOO service ports.
-
-Configuration overrides: `RISK_COMPLIANCE_DB_URL`, `RISK_COMPLIANCE_DB_USER`, `RISK_COMPLIANCE_DB_PASSWORD`, and `RISK_COMPLIANCE_SERVER_PORT`. Compose provisions the fixed database/user names `risk_compliance_db`/`risk_compliance_user`; URL and user overrides target an independently provisioned database. Never commit real credentials or customer data.
-
-Stop the development database with `docker compose down`. Its named volume retains data.
-
-```sh
-curl --fail http://localhost:8090/actuator/health
-```
-
-## Verify
-
-```sh
-./mvnw verify
-```
-
-Tests start an isolated PostgreSQL 17 container, check database connectivity and HTTP health, and reject unauthenticated requests outside health. They require neither the development database nor the development password. They fail if Docker is unavailable rather than silently skipping verification.
-
-## Initial access policy
-
-Only `/actuator/health` is public, with component details hidden. All other requests are denied. Form login, HTTP Basic, logout, request caching, generated development users, and server-side session creation are disabled. CSRF protection retains Spring Security defaults. Authentication mechanisms and explicit permissions must be added with the business workflows.
-
-## Boundary and next implementation
-
-- Own versioned risk policies, evaluation results, screening references, alerts, and investigation decisions.
-- Keep customer KYC evidence and verification-tier ownership in Customer Service; consume the eligibility facts required by an evaluation.
-- Define evaluation outcomes, reason codes, policy versions, decision expiry, and explicit behavior when screening dependencies are unavailable.
-- Use approved country/operator rules and screening sources. Do not treat this initialization as regulatory certification or an automated final determination of customer eligibility.
-- Make evaluations repeatable by request reference, record the policy and evidence references used, and define controlled reassessment when facts change.
-- Define authorized case review, dual approval for sensitive overrides, escalation, and an audit trail for every decision.
-- Minimize personal-data exposure in requests, logs, and review interfaces; configure retention and access controls before integrating real screening providers.
-- Keep payment posting and ledger updates outside this service. A risk recommendation alone must not debit, credit, reverse, or freeze an account.
-- Introduce versioned migrations under `src/main/resources/db/migration` with the first persistence model. Hibernate validates schemas rather than creating them.
-- Keep other services out of this database; define authenticated APIs or versioned events for integration.
-
-No business endpoints, real credentials, external integrations, or cross-service operations are enabled by this initialization.
+Tokens require the configured issuer, expiry, audience `boodoo-risk-compliance-api`, signed integrator_id, signed actor_type service and a stable subject. Scopes are checked independently. Tenant/actor headers cannot override claims. Use HTTPS in deployed traffic. Invalid requests return 400, authentication 401, authorization 403, unknown/foreign resources 404, state/idempotency conflicts 409, and storage unavailability 503 with sanitized problem details. No end-user OTP is sent or verified.
