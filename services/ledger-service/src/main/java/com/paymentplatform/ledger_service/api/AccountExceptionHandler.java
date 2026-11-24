@@ -20,7 +20,7 @@ public class AccountExceptionHandler {
     ProblemDetail business(AccountApiException error) { return problem(error.status(), error.code(), error.getMessage()); }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, HandlerMethodValidationException.class,
-            HttpMessageNotReadableException.class, MissingRequestHeaderException.class, MethodArgumentTypeMismatchException.class})
+            HttpMessageNotReadableException.class, MissingRequestHeaderException.class, MethodArgumentTypeMismatchException.class, org.springframework.web.bind.MissingServletRequestParameterException.class})
     ProblemDetail invalidRequest(Exception exception) {
         return problem(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",
                 "Provide valid request fields, identifiers and the headers required by this operation.");
@@ -31,8 +31,8 @@ public class AccountExceptionHandler {
         return problem(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", "Use Content-Type application/json.");
     }
 
-    @ExceptionHandler(DataAccessException.class)
-    ProblemDetail unavailable(DataAccessException exception, HttpServletRequest request) {
+    @ExceptionHandler({DataAccessException.class, org.springframework.transaction.TransactionSystemException.class})
+    ProblemDetail unavailable(Exception exception, HttpServletRequest request) {
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "ACCOUNT_OPERATION_UNAVAILABLE",
                 "The ledger account operation is temporarily unavailable. Retry creation with the same Idempotency-Key.");
     }

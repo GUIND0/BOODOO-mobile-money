@@ -1,6 +1,6 @@
 # Ledger Service — accounting accounts
 
-Ledger Service now owns an immutable, tenant-scoped chart of XOF accounts. This is the foundation for subsequent double-entry journals. Account creation does not post an entry, expose an accounting balance, bind/activate a wallet, authorize spending or move money.
+Ledger Service owns an immutable, tenant-scoped chart of XOF accounts and balanced accounting journals. Account creation alone does not post entries or bind/activate a wallet. Posting is a separate privileged service operation. Wallet lifecycle and transfer orchestration remain outside this service.
 
 ## Run locally
 
@@ -34,7 +34,7 @@ curl --request POST 'http://127.0.0.1:8083/internal/v1/accounts' \
 
 `POST /internal/v1/accounts` returns 201 with `id`, `code`, `currency`, `type`, `normalBalance`, `createdAt`, a relative `Location`, no-store caching and `Idempotency-Replayed`. `GET /internal/v1/accounts/{accountId}` returns that metadata after tenant filtering. Missing and foreign IDs both return 404 ACCOUNT_NOT_FOUND.
 
-Codes are opaque identifiers, not personal names or document numbers: `[A-Z][A-Z0-9_-]{0,63}`. Code/currency are trimmed and uppercased. Only XOF is supported. Type must be ASSET, LIABILITY, EQUITY, INCOME or EXPENSE. `normalBalance` is a **side**, not an amount: ASSET/EXPENSE derive DEBIT; LIABILITY/EQUITY/INCOME derive CREDIT. Clients cannot supply it or a balance. Classification and metadata are immutable, enforced by database triggers. No update/delete, opening-balance, journal or posting endpoint exists.
+Codes are opaque identifiers, not personal names or document numbers: `[A-Z][A-Z0-9_-]{0,63}`. Code/currency are trimmed and uppercased. Only XOF is supported. Type must be ASSET, LIABILITY, EQUITY, INCOME or EXPENSE. `normalBalance` is a **side**, not an amount: ASSET/EXPENSE derive DEBIT; LIABILITY/EQUITY/INCOME derive CREDIT. Clients cannot supply it or a balance. Classification and metadata are immutable, enforced by database triggers. Account metadata has no update/delete or opening-balance endpoint. Journal posting is a separate permission and operation, described below.
 
 One code/currency pair is unique per integrator. The creating service subject is recorded in the database, without exposing it in the response. Account identifiers are not automatically linked to wallets or Customer Service records.
 
@@ -46,8 +46,18 @@ Per-key PostgreSQL advisory locks serialize retries. Unique constraints protect 
 
 Errors use problem details with stable application codes: 400 INVALID_REQUEST, 403 SERVICE_REQUIRED/ACTOR_REQUIRED, 404 ACCOUNT_NOT_FOUND, 409 IDEMPOTENCY_CONFLICT/ACCOUNT_ALREADY_EXISTS and 503 ACCOUNT_OPERATION_UNAVAILABLE. Authentication failures return 401, insufficient endpoint scopes 403, and unsupported content type 415. Responses do not echo SQL diagnostics or rejected body values. Apply token/payload redaction to ingress and monitoring.
 
+## Balanced journals and balances
+
+`POST /internal/v1/journals` requires a service identity and `ledger:journals:write`, plus Idempotency-Key. Body: `{"reference":"<transaction-uuid>","entries":[{"accountId":"<asset-uuid>","side":"DEBIT","amount":100},{"accountId":"<liability-uuid>","side":"CREDIT","amount":100}]}`. XOF amounts are integer minor units (one franc); 2–20 distinct owned accounts are required. Totals must balance and fit signed 64-bit integers. The actor-bound key fingerprints canonical account order. Replays return the original 201 receipt; different details/key reuse conflict, and a reference can be posted only once per tenant.
+
+Account locks are acquired in UUID order. Derived normal balances cannot become negative or overflow, including simultaneous debits. This deliberately conservative V1 constraint applies to all account classes. Posted journals, entries and request snapshots are immutable. Deferred PostgreSQL constraint triggers independently reject unbalanced/incomplete journals and unsupported account balances at commit. Funding/settlement authority is a privileged service responsibility; this generic accounting endpoint must never be exposed as an unrestricted customer funding API.
+
+`GET /internal/v1/journals/{id}` and `/internal/v1/journals/by-reference?reference=<uuid>` require `ledger:journals:read`; use reference lookup or the original idempotency key after uncertain network outcomes. `GET /internal/v1/accounts/{id}/balance` requires `ledger:balances:read` and returns the current authoritative amount derived from immutable entries, with no-store caching. There is no mutable balance projection or opening-balance field. Missing/foreign resources are indistinguishable. SQL or commit failures roll back all entries and snapshots. Reversals must be new linked compensating journals; no automatic reversal endpoint exists yet.
+
+`GET /internal/v1/reconciliation/snapshot` requires `ledger:reconciliation:read` and a service identity. One SQL snapshot reports tenant journal count, unbalanced-journal count, invalid-normal-balance count and checkedAt. This checks internal accounting integrity only, not external bank settlement or whether a business transaction was authorized. No wallet, transfer or payment is activated by these APIs.
+
 ## Verification and next work
 
 Run `./mvnw -o clean verify` with Docker. Tests use real PostgreSQL 17 and ephemeral signed JWTs. They cover classifications, service-only authorization, tenant isolation, canonical replay, actor-bound keys, concurrent creation, uniqueness, database immutability and rollback/retry after an injected persistence failure.
 
-Next accounting work: atomic balanced journals in integer minor units, durable posting idempotency, concurrency and account constraints, immutable posted entries, linked reversals and authoritative derived balances. Wallet activation and transfer orchestration remain separate controlled workflows. No financial operation is implemented by this account API.
+Next accounting work: linked reversal workflows, posting recovery/orchestration, external settlement reconciliation and controlled wallet/account binding. Wallet activation and transfer orchestration remain separate controlled workflows. No financial operation is implemented by this account API.
