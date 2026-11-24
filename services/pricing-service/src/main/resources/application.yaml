@@ -6,10 +6,9 @@ spring:
     username: ${PRICING_DB_USER:pricing_user}
     password: ${PRICING_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   flyway:
     enabled: true
 
@@ -24,3 +23,14 @@ management:
   endpoint:
     health:
       show-details: never
+
+boodoo:
+  security:
+    issuer: ${PRICING_JWT_ISSUER_URI}
+    jwk-set-uri: ${PRICING_JWT_JWK_SET_URI}
+    audience: ${PRICING_JWT_AUDIENCE:boodoo-pricing-api}
+  pricing:
+    version: ${PRICING_POLICY_VERSION}
+    basis-points: ${PRICING_BASIS_POINTS}
+    flat-fee: ${PRICING_FLAT_FEE}
+    ttl-seconds: ${PRICING_QUOTE_TTL_SECONDS}
