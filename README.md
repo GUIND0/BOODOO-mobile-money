@@ -33,6 +33,8 @@ Build a modular Core Mobile Money platform capable of supporting financial opera
 
 ## Project Status
 
-**Early development — Wallet Service initialization.**
+**Active development — onboarding and financial workflow foundations.**
+
+Customer onboarding, transaction PINs and operator KYC review are implemented. The current feature batch adds accounting-backed wallet activation, balanced ledger journals, controlled P2P transfers, pricing/allowance/risk checks, audit/inbox records, internal integrity reports and public API routing. Full-stack release validation, external settlement/payment flows, recovery operations and deployment controls remain release gates.
 
 BOODOO is currently an engineering project and is not intended to process real customer funds. The capabilities listed above represent the planned product scope and will be implemented incrementally.

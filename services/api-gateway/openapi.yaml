@@ -1,0 +1,1576 @@
+openapi: 3.1.0
+info:
+  description: Public JSON routes through the stateless gateway. Tokens need the gateway and destination audiences;
+    each destination enforces its own scopes and actor/ownership policy. Internal financial/control endpoints are
+    not exposed. This contract describes the complete feature batch and requires those service PRs.
+  title: BOODOO Public API
+  version: 0.1.0
+paths:
+  /v1/customers:
+    get:
+      operationId: listCustomers
+      summary: List the authenticated integrator's customer summaries
+      description: Requires customers:read. Live keyset pagination by ascending UUID, not creation time. Keep the
+        same filter across pages; concurrent changes are not snapshotted. No phone, address or evidence is returned.
+        Cursor values never grant tenant access.
+      security:
+      - gatewayBearer: &id001 [
+          ]
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - in: query
+        name: after
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: kycStatus
+        schema:
+          type: string
+          enum:
+          - PENDING
+          - UNDER_REVIEW
+          - APPROVED
+          - REJECTED
+      responses:
+        '200':
+          description: Customer summaries, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - nextAfter
+                properties:
+                  nextAfter:
+                    type:
+                    - string
+                    - 'null'
+                    format: uuid
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - externalReference
+                      - firstName
+                      - lastName
+                      - kycStatus
+                      - createdAt
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        externalReference:
+                          type: string
+                        firstName:
+                          type: string
+                        lastName:
+                          type: string
+                        kycStatus:
+                          type: string
+                          enum:
+                          - PENDING
+                          - UNDER_REVIEW
+                          - APPROVED
+                          - REJECTED
+                        createdAt:
+                          type: string
+                          format: date-time
+        '400':
+          description: Invalid limit, cursor or status
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing customers:read scope
+        '503':
+          description: Customer storage temporarily unavailable
+    post:
+      operationId: createCustomer
+      summary: Create a minimal customer with pending KYC
+      description: Requires customers:write and a trusted integrator_id claim. Keys, external references, and phone
+        numbers are unique within the integrator. A same-key replay with identical normalized fields returns the
+        original 201 response; a different payload conflicts. Leading/trailing whitespace is stripped before validation
+        and fingerprinting.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/customer_CreateCustomer'
+      responses:
+        '201':
+          description: Customer created, or original creation replayed
+          headers:
+            Idempotency-Replayed:
+              description: True for an existing creation result
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/customer_Customer'
+        '400':
+          description: Invalid request or idempotency key
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/customer_Problem'
+        '401':
+          description: Missing or invalid bearer identity or required partner claims
+        '403':
+          description: Valid identity lacks customers:write
+        '409':
+          description: CUSTOMER_ALREADY_EXISTS or IDEMPOTENCY_CONFLICT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/customer_Problem'
+        '415':
+          description: Unsupported request content type
+        '503':
+          description: Storage unavailable; retry the same profile with the same key
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/customer_Problem'
+  /v1/customers/by-reference:
+    get:
+      operationId: findCustomerByReference
+      summary: Find the current profile by an integrator's exact external reference
+      description: Requires customers:read. Case-sensitive, trimmed reference; tenant derives from JWT.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: query
+        name: externalReference
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+      responses:
+        '200':
+          description: Current profile with ETag and Cache-Control no-store
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/customer_Profile'
+        '400':
+          description: Missing or invalid reference
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing customers:read
+        '404':
+          description: Unknown or foreign reference
+        '503':
+          description: Customer storage unavailable
+  /v1/customers/{customerId}/profile-history:
+    get:
+      operationId: listCustomerProfileHistory
+      summary: Read immutable manual profile-edit metadata
+      description: Requires customers:audit:read, signed operator claim and stable subject. No profile values; excludes
+        KYC transitions.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - in: query
+        name: afterVersion
+        schema:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: Revision-ordered metadata with Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - nextAfterVersion
+                properties:
+                  nextAfterVersion:
+                    type:
+                    - integer
+                    - 'null'
+                    format: int64
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required:
+                      - version
+                      - actorId
+                      - changedFields
+                      - changedAt
+                      properties:
+                        version:
+                          type: integer
+                          format: int64
+                        actorId:
+                          type: string
+                        changedFields:
+                          type: array
+                          items:
+                            type: string
+                        changedAt:
+                          type: string
+                          format: date-time
+        '400':
+          description: Invalid identifiers or pagination
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing audit scope or operator identity
+        '404':
+          description: Unknown or foreign customer
+        '503':
+          description: Customer storage unavailable
+  /v1/customers/{customerId}:
+    get:
+      operationId: getCustomer
+      summary: Read the authenticated integrator's current customer profile
+      description: Requires customers:read; foreign and missing customers both return 404.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Current profile, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/customer_Profile'
+        '400':
+          description: Invalid UUID
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing customers:read
+        '404':
+          description: CUSTOMER_NOT_FOUND
+        '503':
+          description: CUSTOMER_OPERATION_UNAVAILABLE
+    patch:
+      operationId: updateCustomerProfile
+      summary: Complete an integrator-owned profile with optimistic concurrency
+      description: Requires customers:write and a stable JWT sub. Omitted/null fields remain unchanged.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: If-Match
+        required: true
+        description: Strong quoted profile revision returned by GET
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/customer_ProfilePatch'
+      responses:
+        '200':
+          description: Current enriched profile with ETag and no-store caching
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/customer_Profile'
+        '400':
+          description: Invalid fields or ETag
+        '401':
+          description: Invalid bearer identity
+        '403':
+          description: Missing write scope or actor
+        '404':
+          description: Missing or foreign customer
+        '409':
+          description: Profile frozen by KYC
+        '412':
+          description: Stale profile revision
+        '428':
+          description: If-Match required
+        '503':
+          description: Storage unavailable
+  /v1/customers/{customerId}/kyc-submissions:
+    get:
+      operationId: listCustomerKycSubmissions
+      summary: List historical and active KYC submission summaries
+      description: Requires kyc:read. Live UUID order; each status comes from its own decision. No profile, evidence
+        or actor data.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - in: query
+        name: after
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Dossier summaries, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - nextAfter
+                properties:
+                  nextAfter:
+                    type:
+                    - string
+                    - 'null'
+                    format: uuid
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required:
+                      - id
+                      - profileVersion
+                      - status
+                      - submittedAt
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        profileVersion:
+                          type: integer
+                          format: int64
+                        status:
+                          type: string
+                          enum:
+                          - UNDER_REVIEW
+                          - APPROVED
+                          - REJECTED
+                        submittedAt:
+                          type: string
+                          format: date-time
+        '400':
+          description: Invalid identifiers or pagination
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing kyc:read scope
+        '404':
+          description: Unknown or foreign customer
+        '503':
+          description: Customer storage unavailable
+    post:
+      operationId: submitCustomerKyc
+      summary: Submit a complete profile and immutable evidence references for review
+      description: Requires kyc:submit and stable JWT sub. No automatic identity verification or approval.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - documents
+              properties:
+                documents:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  items:
+                    $ref: '#/components/schemas/customer_KycDocument'
+      responses:
+        '201':
+          description: Dossier submitted or original snapshot replayed; Idempotency-Replayed header
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/customer_KycSubmission'
+        '400':
+          description: Invalid or expired document metadata
+        '401':
+          description: Invalid bearer identity
+        '403':
+          description: Missing scope or actor
+        '404':
+          description: Missing or foreign customer
+        '409':
+          description: Incomplete profile
+          active dossier or conflicting key: null
+        '412':
+          description: Profile revision changed
+        '428':
+          description: If-Match required
+        '503':
+          description: Storage unavailable
+  /v1/customers/{customerId}/kyc-submissions/{submissionId}:
+    get:
+      operationId: getCustomerKycSubmission
+      summary: Read an integrator-owned dossier snapshot
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: submissionId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Dossier and review status; Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/customer_KycDossier'
+        '401':
+          description: Invalid bearer identity
+        '403':
+          description: Requires kyc:read
+        '404':
+          description: Unknown
+          foreign or mismatched dossier: null
+  /v1/customers/{customerId}/kyc-submissions/{submissionId}/decisions:
+    post:
+      operationId: reviewCustomerKyc
+      summary: Record an independent operator's final KYC review decision
+      description: Requires kyc:review, signed actor_type operator and stable JWT sub different from the submitter.
+        Records an explicit review decision, not automatic identity verification or financial authorization.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: submissionId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - decision
+              - reasonCode
+              properties:
+                decision:
+                  type: string
+                  enum:
+                  - APPROVED
+                  - REJECTED
+                reasonCode:
+                  type: string
+                  pattern: ^[A-Z][A-Z0-9_]{0,63}$
+      responses:
+        '201':
+          description: Immutable decision recorded or original response replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/customer_KycDecision'
+        '400':
+          description: Invalid UUID
+          body or key: null
+        '401':
+          description: Invalid bearer identity
+        '403':
+          description: Missing review scope/operator identity
+          or self review: null
+        '404':
+          description: Missing or foreign customer or dossier
+        '409':
+          description: Already decided
+          stale dossier: null
+          expired approval evidence or conflicting key: null
+        '503':
+          description: Storage unavailable
+  /v1/kyc-review-queue:
+    get:
+      operationId: listKycReviewQueue
+      summary: List active dossiers available to the authenticated review operator
+      description: Requires kyc:review, signed actor_type operator and a stable subject. Tenant-scoped; excludes
+        own submissions, finalized dossiers and stale frozen revisions. Returns metadata only. Read a dossier separately
+        with kyc:read. Live UUID-ordered pagination, not a reservation or approval eligibility guarantee.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - in: query
+        name: after
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Current queue metadata, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - nextAfter
+                properties:
+                  nextAfter:
+                    type:
+                    - string
+                    - 'null'
+                    format: uuid
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      type: object
+                      required:
+                      - submissionId
+                      - customerId
+                      - profileVersion
+                      - submittedAt
+                      properties:
+                        submissionId:
+                          type: string
+                          format: uuid
+                        customerId:
+                          type: string
+                          format: uuid
+                        profileVersion:
+                          type: integer
+                          format: int64
+                        submittedAt:
+                          type: string
+                          format: date-time
+        '400':
+          description: Invalid limit or cursor
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing review scope, operator claim or stable subject
+        '503':
+          description: Customer storage temporarily unavailable
+  /v1/customers/{customerId}/pin:
+    get:
+      operationId: getCustomerPinStatus
+      summary: Read whether an owned customer has configured a transaction PIN
+      description: Requires pins:read, customers:ownership:read and both service audiences. Checks remote ownership
+        before local state. No comparison, counter mutation or payment authorization. A configured credential may
+        still be temporarily locked; no lock/credential details are exposed.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Configuration flag only, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - customerId
+                - configured
+                properties:
+                  customerId:
+                    type: string
+                    format: uuid
+                  configured:
+                    type: boolean
+        '400':
+          description: Invalid customer UUID
+        '401':
+          description: Missing or invalid bearer identity or audiences
+        '403':
+          description: Missing read scope or ownership permission
+        '404':
+          description: Unknown or foreign customer
+        '503':
+          description: Ownership or PIN status storage unavailable; never reported as false
+    post:
+      operationId: createCustomerPin
+      summary: Create the customer's first transaction PIN
+      description: Requires pins:create and customers:ownership:read, a trusted integrator_id, and audiences for
+        Identity and Customer Services. Customer ownership is checked through Customer Service, including on replay.
+        Ten confirmed-ownership setup attempts per integrator/customer per 15-minute window include replays and
+        conflicts. Sensitive creation replays also share verification's five-failure lock and thirty-comparison
+        budget.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - pin
+              properties:
+                pin:
+                  type: string
+                  writeOnly: true
+                  pattern: ^[0-9]{6}$
+                  description: Six ASCII digits, preserving leading zeros. Repeated digits and ascending or descending
+                    sequences, including wraparound, are rejected.
+                  example: '739152'
+      responses:
+        '201':
+          description: First PIN created or original creation replayed; never returns the PIN
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/identity_PinCreation'
+        '400':
+          description: Invalid UUID, PIN, fields or idempotency key
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/identity_Problem'
+        '401':
+          description: Bearer identity, issuer, expiration, partner claim or audiences invalid
+        '403':
+          description: Required PIN or ownership permission missing
+        '404':
+          description: Customer missing or not owned by this integrator
+        '409':
+          description: PIN_ALREADY_EXISTS or IDEMPOTENCY_CONFLICT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/identity_Problem'
+        '415':
+          description: Use Content-Type application/json
+        '429':
+          description: PIN_SETUP_RATE_LIMITED, PIN_VERIFICATION_LOCKED or PIN_VERIFICATION_RATE_LIMITED
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                const: 900
+        '503':
+          description: OWNERSHIP_UNAVAILABLE, PIN_CREATION_UNAVAILABLE or PIN_KEY_UNAVAILABLE
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/identity_Problem'
+  /v1/customers/{customerId}/pin/verify:
+    post:
+      operationId: verifyCustomerPin
+      summary: Verify a transaction PIN without changing it
+      description: Requires pins:verify and customers:ownership:read, the trusted integrator_id, and both service
+        audiences. Fresh ownership is checked. A 204 confirms the PIN only, not a transaction authorization. Five
+        consecutive failures lock comparisons for 15 minutes; thirty comparisons per customer/integrator per 15-minute
+        window are allowed. Counters and lockout are shared with sensitive creation replays. Idempotency keys do
+        not deduplicate attempts.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - pin
+              properties:
+                pin:
+                  type: string
+                  writeOnly: true
+                  pattern: ^[0-9]{6}$
+                  description: Exact six-digit string; leading zeros preserved; no strength-policy filtering
+                  example: '739152'
+      responses:
+        '204':
+          description: PIN matches; empty response, no token or authorization grant
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+        '400':
+          description: Invalid UUID, PIN format or unknown fields
+        '401':
+          description: Missing or invalid bearer identity
+        '403':
+          description: Missing pins:verify or customers:ownership:read scope
+        '404':
+          description: CUSTOMER_NOT_FOUND or PIN_NOT_CONFIGURED
+        '415':
+          description: Use application/json
+        '422':
+          description: PIN_INVALID; failure is persisted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/identity_Problem'
+        '429':
+          description: PIN_VERIFICATION_LOCKED or PIN_VERIFICATION_RATE_LIMITED
+          headers:
+            Retry-After:
+              description: Conservative retry delay; does not reset lockout
+              schema:
+                type: integer
+                const: 900
+        '503':
+          description: OWNERSHIP_UNAVAILABLE, PIN_KEY_UNAVAILABLE or PIN_VERIFICATION_UNAVAILABLE
+  /v1/wallets:
+    post:
+      operationId: createPendingWallet
+      summary: Provision an owned customer's pending XOF wallet
+      description: Requires wallets:write and customers:ownership:read with both service audiences. Tenant derives
+        from signed JWT claims. Ownership is checked on each request, including replay. Currency is trimmed and
+        uppercased. Same-key canonical replay returns the original snapshot; differing payload reuse conflicts.
+        A new key for an existing customer/currency conflicts.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - customerId
+              - currency
+              properties:
+                customerId:
+                  type: string
+                  format: uuid
+                currency:
+                  type: string
+                  description: Only XOF after trimming and uppercasing
+                  examples:
+                  - XOF
+                  - xof
+      responses:
+        '201':
+          description: Pending wallet created or original creation replayed; Cache-Control no-store
+          headers:
+            Location:
+              description: Relative metadata resource URI
+              schema:
+                type: string
+                format: uri-reference
+            Idempotency-Replayed:
+              schema:
+                type: boolean
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/wallet_Wallet'
+        '400':
+          description: INVALID_REQUEST or UNSUPPORTED_CURRENCY
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/wallet_Problem'
+        '401':
+          description: Missing or invalid bearer identity or required audiences
+        '403':
+          description: Missing write scope or customer ownership permission
+        '404':
+          description: Unknown or foreign customer
+        '409':
+          description: IDEMPOTENCY_CONFLICT or WALLET_ALREADY_EXISTS
+        '415':
+          description: Unsupported request content type
+        '503':
+          description: Ownership or storage unavailable; retry with the same key
+  /v1/wallets/{walletId}:
+    get:
+      operationId: getPendingWallet
+      summary: Read wallet metadata after a fresh ownership check
+      description: Requires wallets:read and customers:ownership:read with both service audiences. No financial
+        eligibility is inferred.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: walletId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Tenant-scoped wallet metadata, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/wallet_Wallet'
+        '400':
+          description: Invalid wallet UUID
+        '401':
+          description: Missing or invalid bearer identity or required audiences
+        '403':
+          description: Missing read scope or customer ownership permission
+        '404':
+          description: Unknown or foreign wallet or customer
+        '503':
+          description: Ownership or storage unavailable; metadata is not returned
+  /v1/transfers:
+    post:
+      operationId: createP2PTransfer
+      description: Trusted integration service plus transfers:write. Actor-bound financial idempotency; PIN is verified
+        only before initial authorization and never persisted. Dedicated configured transfer-service credentials
+        are used downstream.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - senderWalletId
+              - recipientWalletId
+              - amount
+              - maxFee
+              - currency
+              - pin
+              properties:
+                senderWalletId:
+                  type: string
+                  format: uuid
+                recipientWalletId:
+                  type: string
+                  format: uuid
+                amount:
+                  type: integer
+                  format: int64
+                  minimum: 1
+                maxFee:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                currency:
+                  type: string
+                  enum:
+                  - XOF
+                pin:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                  writeOnly: true
+      responses:
+        '201':
+          description: COMPLETED live transfer view; Location and Idempotency-Replayed identify the operation
+        '202':
+          description: Pending/uncertain or posted-awaiting-finalization view; retry the original key or inspect
+            Location
+        '400':
+          description: Invalid body or key
+          fractional money: null
+          numeric PIN or identical wallets: null
+        '401':
+          description: Invalid caller token
+        '403':
+          description: Missing scope or trusted service identity
+        '409':
+          description: Key conflicts with financial intent or caller
+        '422':
+          description: Definitive rejection before financial reservation/posting
+          with controlled lastCode: null
+        '503':
+          description: Storage failure; outcome may be uncertain
+          retain original key: null
+    get:
+      operationId: listWalletTransferHistory
+      description: Trusted integration service plus transfers:read; live UUID pages of recorded attempts, not a
+        chronological export.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: query
+        name: walletId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: after
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: items and nullable nextAfter
+  /v1/transfers/{id}:
+    get:
+      operationId: getTransfer
+      description: Tenant-scoped transfers:read. POSTED already represents a recorded ledger effect even if finalization
+        remains pending.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Transfer view with state
+          principal/fee: null
+          journalId and lastCode; no PIN or credentials: null
+        '404':
+          description: Unknown or foreign transfer
+  /v1/customers/{customerId}/notifications:
+    get:
+      operationId: listNotifications
+      description: Provisioned service plus notifications:read; tenant/customer inbox with live UUID pages.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: after
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      responses:
+        '200':
+          description: items and nextAfter with live acknowledgement state
+  /v1/customers/{customerId}/notifications/{id}/acknowledgement:
+    post:
+      operationId: acknowledgeNotification
+      description: Provisioned service plus notifications:ack; idempotent first acknowledgement, not proof of external
+        delivery.
+      security:
+      - gatewayBearer: *id001
+      parameters:
+      - in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Acknowledged notification
+        '404':
+          description: Unknown or foreign customer/notification combination
+components:
+  schemas:
+    customer_CreateCustomer:
+      type: object
+      additionalProperties: false
+      required:
+      - externalReference
+      - firstName
+      - lastName
+      - phoneNumber
+      properties:
+        externalReference:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Integrator customer reference; case-sensitive and not whitespace-only
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        lastName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        phoneNumber:
+          type: string
+          pattern: ^\+[1-9][0-9]{1,14}$
+          description: International format; ownership verification belongs to the integrator
+    customer_Customer:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - externalReference
+      - firstName
+      - lastName
+      - phoneNumber
+      - kycStatus
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        externalReference:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phoneNumber:
+          type: string
+        kycStatus:
+          type: string
+          const: PENDING
+        createdAt:
+          type: string
+          format: date-time
+    customer_Problem:
+      type: object
+      required:
+      - type
+      - title
+      - status
+      - detail
+      - code
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          enum:
+          - INVALID_REQUEST
+          - CUSTOMER_ALREADY_EXISTS
+          - IDEMPOTENCY_CONFLICT
+          - CUSTOMER_CREATION_UNAVAILABLE
+          - UNSUPPORTED_MEDIA_TYPE
+          - CUSTOMER_NOT_FOUND
+          - CUSTOMER_OPERATION_UNAVAILABLE
+          - PRECONDITION_REQUIRED
+          - PROFILE_VERSION_CONFLICT
+          - PROFILE_LOCKED_FOR_KYC
+          - ACTOR_REQUIRED
+          - PROFILE_INCOMPLETE
+          - KYC_SUBMISSION_CONFLICT
+          - KYC_SUBMISSION_NOT_FOUND
+          - KYC_DOCUMENT_EXPIRED
+          - OPERATOR_REQUIRED
+          - SELF_REVIEW_FORBIDDEN
+          - KYC_DECISION_EXISTS
+          - STALE_KYC_SUBMISSION
+    customer_Profile:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - externalReference
+      - firstName
+      - lastName
+      - phoneNumber
+      - kycStatus
+      - createdAt
+      - version
+      - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        externalReference:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        phoneNumber:
+          type: string
+        kycStatus:
+          type: string
+          enum:
+          - PENDING
+          - UNDER_REVIEW
+          - APPROVED
+          - REJECTED
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          minimum: 0
+        updatedAt:
+          type: string
+          format: date-time
+        dateOfBirth:
+          type:
+          - string
+          - 'null'
+          format: date
+        nationality:
+          type:
+          - string
+          - 'null'
+        residenceCountry:
+          type:
+          - string
+          - 'null'
+        addressLine:
+          type:
+          - string
+          - 'null'
+        city:
+          type:
+          - string
+          - 'null'
+    customer_ProfilePatch:
+      type: object
+      additionalProperties: false
+      description: At least one non-null field; dates in past, countries real ISO alpha-2 codes
+      properties:
+        firstName:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 100
+        lastName:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 100
+        dateOfBirth:
+          type:
+          - string
+          - 'null'
+          format: date
+        nationality:
+          type:
+          - string
+          - 'null'
+        residenceCountry:
+          type:
+          - string
+          - 'null'
+        addressLine:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 200
+        city:
+          type:
+          - string
+          - 'null'
+          minLength: 1
+          maxLength: 100
+    customer_KycDocument:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - reference
+      - issuingCountry
+      properties:
+        type:
+          type: string
+          enum:
+          - NATIONAL_ID
+          - PASSPORT
+          - RESIDENCE_PERMIT
+        reference:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$
+        issuingCountry:
+          type: string
+          description: ISO alpha-2 country
+        expiresOn:
+          type:
+          - string
+          - 'null'
+          format: date
+    customer_KycSubmission:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - customerId
+      - status
+      - profileVersion
+      - profile
+      - documents
+      - submittedBy
+      - submittedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - UNDER_REVIEW
+          - APPROVED
+          - REJECTED
+        profileVersion:
+          type: integer
+        profile:
+          $ref: '#/components/schemas/customer_Profile'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/customer_KycDocument'
+        submittedBy:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+    customer_KycDecision:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - customerId
+      - submissionId
+      - status
+      - reasonCode
+      - reviewedBy
+      - reviewedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        submissionId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - APPROVED
+          - REJECTED
+        reasonCode:
+          type: string
+        reviewedBy:
+          type: string
+        reviewedAt:
+          type: string
+          format: date-time
+    customer_KycDossier:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - customerId
+      - status
+      - profileVersion
+      - profile
+      - documents
+      - submittedBy
+      - submittedAt
+      - decision
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - UNDER_REVIEW
+          - APPROVED
+          - REJECTED
+        profileVersion:
+          type: integer
+        profile:
+          $ref: '#/components/schemas/customer_Profile'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/customer_KycDocument'
+        submittedBy:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        decision:
+          anyOf:
+          - $ref: '#/components/schemas/customer_KycDecision'
+          - type: 'null'
+    identity_PinCreation:
+      type: object
+      additionalProperties: false
+      required:
+      - customerId
+      - status
+      - createdAt
+      properties:
+        customerId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: CREATED
+        createdAt:
+          type: string
+          format: date-time
+    identity_Problem:
+      type: object
+      required:
+      - type
+      - title
+      - status
+      - detail
+      - code
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          enum:
+          - INVALID_REQUEST
+          - UNSUPPORTED_MEDIA_TYPE
+          - CUSTOMER_NOT_FOUND
+          - OWNERSHIP_FORBIDDEN
+          - OWNERSHIP_UNAVAILABLE
+          - PIN_ALREADY_EXISTS
+          - IDEMPOTENCY_CONFLICT
+          - PIN_SETUP_RATE_LIMITED
+          - PIN_CREATION_UNAVAILABLE
+          - PIN_KEY_UNAVAILABLE
+          - PIN_NOT_CONFIGURED
+          - PIN_INVALID
+          - PIN_VERIFICATION_LOCKED
+          - PIN_VERIFICATION_RATE_LIMITED
+          - PIN_VERIFICATION_UNAVAILABLE
+    wallet_Wallet:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - customerId
+      - currency
+      - status
+      - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        currency:
+          type: string
+          enum:
+          - XOF
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACTIVE
+        createdAt:
+          type: string
+          format: date-time
+    wallet_Problem:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        code:
+          type: string
+  securitySchemes:
+    gatewayBearer:
+      scheme: bearer
+      type: http
+      bearerFormat: JWT
