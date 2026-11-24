@@ -1,0 +1,332 @@
+{
+  "paths": {
+    "/internal/v1/external-statements": {
+      "post": {
+        "operationId": "importExternalStatement",
+        "summary": "importExternalStatement",
+        "description": "Requires reconciliation:statements:write. Service identity; integrator supplies bank evidence. Requires ledger statement-read audience/scope. No automatic money adjustment.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "accountId",
+                  "provider",
+                  "statementReference",
+                  "from",
+                  "to",
+                  "opening",
+                  "closing",
+                  "entries"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "accountId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_-]{0,63}$"
+                  },
+                  "statementReference": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  },
+                  "from": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "to": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "opening": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "closing": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "entries": {
+                    "type": "array",
+                    "maxItems": 500,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "externalId",
+                        "reference",
+                        "side",
+                        "amount"
+                      ],
+                      "properties": {
+                        "externalId": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                        },
+                        "reference": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "side": {
+                          "type": "string",
+                          "enum": [
+                            "DEBIT",
+                            "CREDIT"
+                          ]
+                        },
+                        "amount": {
+                          "type": "integer",
+                          "format": "int64",
+                          "minimum": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/external-statements/{id}": {
+      "get": {
+        "operationId": "readExternalStatement",
+        "summary": "readExternalStatement",
+        "description": "Requires reconciliation:statements:read. ",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        }
+      }
+    },
+    "/internal/v1/external-statements/{id}/investigations": {
+      "post": {
+        "operationId": "appendSettlementInvestigation",
+        "summary": "appendSettlementInvestigation",
+        "description": "Requires reconciliation:investigate. Signed operator; dedicated service credentials validate the tenant-owned related journal. Notes do not clear discrepancies.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "reasonCode",
+                  "relatedJournalId"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "reasonCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                  },
+                  "relatedJournalId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "readSettlementInvestigations",
+        "summary": "readSettlementInvestigations",
+        "description": "Requires reconciliation:statements:read. ",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        }
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BOODOO reconciliation-service external-statement-reconciliation",
+    "version": "0.1.0"
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
