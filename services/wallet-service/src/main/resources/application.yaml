@@ -32,3 +32,8 @@ boodoo:
     customer-audience: ${WALLET_CUSTOMER_AUDIENCE:boodoo-customer-api}
   customers:
     base-url: ${WALLET_CUSTOMER_BASE_URL:http://127.0.0.1:8084}
+  dependencies:
+    origins:
+      customer: ${WALLET_CUSTOMER_BASE_URL:http://127.0.0.1:8084}
+      identity: ${WALLET_IDENTITY_BASE_URL:http://127.0.0.1:8086}
+      ledger: ${WALLET_LEDGER_BASE_URL:http://127.0.0.1:8083}

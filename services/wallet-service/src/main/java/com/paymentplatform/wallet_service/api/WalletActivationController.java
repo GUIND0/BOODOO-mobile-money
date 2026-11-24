@@ -1,0 +1,7 @@
+package com.paymentplatform.wallet_service.api;
+import com.paymentplatform.wallet_service.activation.ActivationWorkflow;import com.paymentplatform.wallet_service.security.WalletActor;import jakarta.validation.constraints.Pattern;import org.springframework.http.*;import org.springframework.security.core.annotation.AuthenticationPrincipal;import org.springframework.security.oauth2.jwt.Jwt;import org.springframework.web.bind.annotation.*;import java.util.UUID;
+@RestController public class WalletActivationController {
+ private final ActivationWorkflow workflow;public WalletActivationController(ActivationWorkflow workflow){this.workflow=workflow;}
+ @PostMapping("/internal/v1/wallets/{id}/activate") ResponseEntity<?> activate(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id,@RequestHeader("Idempotency-Key") @Pattern(regexp="[A-Za-z0-9][A-Za-z0-9._:-]{0,127}") String key){var result=workflow.activate(jwt.getClaimAsString("integrator_id"),WalletActor.requireService(jwt),id,key,jwt.getTokenValue());return ResponseEntity.status(201).cacheControl(CacheControl.noStore()).header("Idempotency-Replayed",Boolean.toString(result.replayed())).body(result.response());}
+ @GetMapping("/internal/v1/wallets/{id}/operational-state") ResponseEntity<?> eligibility(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){WalletActor.requireService(jwt);return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(workflow.eligibility(jwt.getClaimAsString("integrator_id"),id,jwt.getTokenValue()));}
+}

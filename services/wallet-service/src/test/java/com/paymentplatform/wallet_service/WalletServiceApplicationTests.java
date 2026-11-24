@@ -52,7 +52,7 @@ class WalletServiceApplicationTests {
         registry.add("boodoo.security.jwk-set-uri", () -> "http://127.0.0.1:" + KEYS.getAddress().getPort() + "/jwks");
     }
     @BeforeEach void clear() {
-        jdbc.execute("TRUNCATE wallet_creation_requests, wallets");
+        jdbc.execute("TRUNCATE wallet_activations, wallet_creation_requests, wallets");
         OWNERS.clear(); UPSTREAM_STATUS.set(0); CALLS.set(0); FORWARDED.set(null);
     }
     @AfterAll static void close() { HTTP.close(); KEYS.stop(0); }
