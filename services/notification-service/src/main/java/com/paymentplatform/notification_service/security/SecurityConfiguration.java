@@ -49,6 +49,8 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST,"/internal/v1/notifications").hasAuthority("SCOPE_notifications:write")
                         .requestMatchers(HttpMethod.GET,"/v1/customers/*/notifications").hasAuthority("SCOPE_notifications:read")
                         .requestMatchers(HttpMethod.POST,"/v1/customers/*/notifications/*/acknowledgement").hasAuthority("SCOPE_notifications:ack")
+                        .requestMatchers(HttpMethod.GET,"/internal/v1/webhook-deliveries/*").hasAuthority("SCOPE_notifications:delivery:read")
+                        .requestMatchers(HttpMethod.POST,"/internal/v1/webhook-deliveries/*/retry").hasAuthority("SCOPE_notifications:delivery:retry")
                         .anyRequest().denyAll())
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())

@@ -25,6 +25,9 @@ management:
       show-details: never
 
 boodoo:
+  webhooks:
+    destinations-json: ${NOTIFICATION_WEBHOOK_DESTINATIONS_JSON:{}}
+    enabled: ${NOTIFICATION_WEBHOOK_ENABLED:false}
   security:
     issuer: ${NOTIFICATION_JWT_ISSUER_URI}
     jwk-set-uri: ${NOTIFICATION_JWT_JWK_SET_URI}

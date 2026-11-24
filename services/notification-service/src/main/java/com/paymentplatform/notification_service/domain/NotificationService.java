@@ -1,7 +1,7 @@
 package com.paymentplatform.notification_service.domain;
 import com.paymentplatform.notification_service.api.ApiException;import jakarta.validation.constraints.*;import org.springframework.http.HttpStatus;import org.springframework.jdbc.core.JdbcTemplate;import org.springframework.stereotype.Service;import org.springframework.transaction.annotation.Transactional;import tools.jackson.databind.ObjectMapper;import java.time.*;import java.util.*;
 @Service public class NotificationService {
- private final JdbcTemplate jdbc;private final ObjectMapper json;public NotificationService(JdbcTemplate jdbc,ObjectMapper json){this.jdbc=jdbc;this.json=json;}
+ private final WebhookOutbox outbox;private final JdbcTemplate jdbc;private final ObjectMapper json;public NotificationService(JdbcTemplate jdbc,ObjectMapper json,WebhookOutbox outbox){this.outbox=outbox;this.jdbc=jdbc;this.json=json;}
  public enum Template {WALLET_ACTIVATED,TRANSFER_POSTED,TRANSFER_REJECTED}
  public record Request(@NotNull UUID id,@NotNull UUID customerId,@NotNull UUID reference,@NotNull Template template){}
  public record Notification(UUID id,UUID customerId,UUID reference,Template template,String status,Instant createdAt,Instant acknowledgedAt){Notification acknowledge(Instant at){return new Notification(id,customerId,reference,template,at==null?"UNREAD":"ACKNOWLEDGED",createdAt,at);}}
@@ -10,7 +10,7 @@ import com.paymentplatform.notification_service.api.ApiException;import jakarta.
  @Transactional(timeout=10) public Result create(String tenant,String actor,Request request){
   String hash=RequestKeys.hash(json.writeValueAsString(request),actor);Instant now=jdbc.queryForObject("SELECT clock_timestamp()",OffsetDateTime.class).toInstant();var response=new Notification(request.id(),request.customerId(),request.reference(),request.template(),"UNREAD",now,null);
   int inserted=jdbc.update("INSERT INTO notifications(integrator_id,id,customer_id,fingerprint,producer,snapshot) VALUES (?,?,?,?,?,?::jsonb) ON CONFLICT DO NOTHING",tenant,request.id(),request.customerId(),hash,actor,json.writeValueAsString(response));
-  if(inserted==1)return new Result(response,false);
+  if(inserted==1){outbox.enqueue(tenant,response.id(),json.writeValueAsString(response));return new Result(response,false);}
   var old=jdbc.queryForObject("SELECT fingerprint,snapshot::text FROM notifications WHERE integrator_id=? AND id=?",(row,n)->List.of(row.getString(1),row.getString(2)),tenant,request.id());
   if(!old.getFirst().equals(hash))throw new ApiException(HttpStatus.CONFLICT,"NOTIFICATION_CONFLICT","This notification ID belongs to different details or a different producer.");
   return new Result(json.readValue(old.get(1),Notification.class),true);
