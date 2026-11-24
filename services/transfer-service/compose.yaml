@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: transfer_user
       POSTGRES_PASSWORD: ${TRANSFER_DB_PASSWORD:?Set TRANSFER_DB_PASSWORD before starting PostgreSQL}
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:5445:5432"
     volumes:
       - transfer_postgres_data:/var/lib/postgresql/data
     healthcheck:
