@@ -15,6 +15,8 @@ public class ReversalService {
  @Transactional(timeout=15)
  public View request(String tenant,String actor,UUID original,String reason){
   journals.get(tenant,original);
+  String producer=jdbc.queryForObject("SELECT created_by FROM journals WHERE integrator_id=? AND id=?",String.class,tenant,original);
+  if("distribution-service".equals(producer))throw error(HttpStatus.CONFLICT,"EXTERNAL_SETTLEMENT_REVERSAL_REQUIRED");
   jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",(org.springframework.jdbc.core.RowCallbackHandler)r->{},"reversal:"+tenant+":"+original);
   if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM journal_reversals WHERE integrator_id=? AND compensating_journal_id=?)",Boolean.class,tenant,original)))throw error(HttpStatus.CONFLICT,"REVERSAL_OF_REVERSAL_FORBIDDEN");
   var existing=jdbc.query("SELECT * FROM journal_reversals WHERE integrator_id=? AND original_journal_id=?",(r,n)->read(r),tenant,original);
