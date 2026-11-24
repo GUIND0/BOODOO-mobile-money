@@ -1,54 +1,13 @@
-# Distribution Service
+# Controlled cash settlement API
 
-Distribution Service will own BOODOO agent profiles, outlet information, onboarding approvals, and agent lifecycle status. V1 focuses on basic agents supporting customer cash-in and cash-out.
+Manual controlled cash pilot: operator asserts receipt/evidence; an independent signed operator checks it. This is not a bank/provider attestation adapter. Configure a tenant-owned ASSET settlement account in DISTRIBUTION_SETTLEMENT_ACCOUNTS_JSON and dedicated signed service tokens (sub distribution-service) in DISTRIBUTION_SERVICE_TOKENS_JSON. Enable only an explicitly approved zero-fee cash policy with DISTRIBUTION_ZERO_FEE_CASH_ENABLED=true. Cash fees are not supported in this pilot.
 
-This initial setup provides the application bootstrap, independent PostgreSQL configuration, Flyway integration, a health endpoint, and a PostgreSQL-backed startup test. Agent tables, onboarding APIs, and cash-operation workflows are not implemented yet.
+POST /internal/v1/cash-operations with Idempotency-Key and {walletId,direction: IN or OUT,amount,evidence,pin}. PIN is required only for OUT and is never stored. cash:request and signed operator required. POST /{id}/approval requires cash:approve and a different operator. Retry that approval for recovery; uncertain ledger results remain pending and are resolved by exact journal reference/entries. Current wallet eligibility, PIN, risk and allowance apply to cash-out. ACCOUNTED means ledger settlement only. For OUT, the original cashier separately acknowledges physical delivery with POST /{id}/disbursement and cash:disburse. Never dispense before ACCOUNTED. Failed physical delivery requires investigation and an independently approved linked reversal; it is never silently retried.
 
-## Requirements
+Dedicated credentials need wallet eligibility/KYC/PIN audiences and scopes, ledger account/journal reads, ledger:journals:write plus ledger:post:settlement, risk evaluation and limits reserve/settle. Only the configured account is used. Evidence keys cannot be reused. Authorization expires after five minutes before first posting; an already posted outcome remains recoverable after expiry. A stuck expired reservation stays held for investigation; do not release it without the ledger reference cancellation barrier. No external cash or bank calls are made automatically.
 
-- JDK 25 or later
-- Docker with a running daemon, including for tests
-- Maven is downloaded by the included wrapper
+## Run and verify
 
-## Run locally
+Set `DISTRIBUTION_DB_PASSWORD`, `DISTRIBUTION_JWT_ISSUER_URI` and `DISTRIBUTION_JWT_JWK_SET_URI`, then run `docker compose up -d --wait` and `./mvnw spring-boot:run` from this service. Existing DB/API ports are retained. Flyway owns the schema; JDBC replaces the unused JPA initialization. `./mvnw -o clean verify` exercises real PostgreSQL 17 and ephemeral signed JWTs.
 
-From `services/distribution-service`:
-
-```sh
-export DISTRIBUTION_DB_PASSWORD='choose-a-local-development-password'
-docker compose up -d --wait
-./mvnw spring-boot:run
-```
-
-The application listens on port `8085`; PostgreSQL is exposed on `127.0.0.1:5436`. These defaults avoid the ports assigned to the Wallet, Transfer, Ledger, and Customer Services.
-
-```sh
-curl --fail http://localhost:8085/actuator/health
-```
-
-Configuration can be overridden with `DISTRIBUTION_DB_URL`, `DISTRIBUTION_DB_USER`, `DISTRIBUTION_DB_PASSWORD`, and `DISTRIBUTION_SERVER_PORT`. Compose provisions the fixed database/user names `distribution_db`/`distribution_user`; URL and user overrides target an independently provisioned database. Never commit actual credentials or agent data.
-
-Stop the development database with `docker compose down`. Its named volume retains data.
-
-## Verify
-
-```sh
-./mvnw verify
-```
-
-The test starts an isolated PostgreSQL 17 container, checks database connectivity, and requests the health endpoint on a random application port. It needs neither the development database nor `DISTRIBUTION_DB_PASSWORD`. It fails when Docker is unavailable rather than silently skipping verification.
-
-## Agent boundary and next implementation
-
-- Own stable agent identifiers, outlet information, onboarding state, approval decisions, and active/suspended/closed status.
-- Link agents to authenticated identities and wallet identifiers through explicit contracts; credentials, PINs, OTPs, and sessions remain in the identity/authentication boundary.
-- Define agent registration, operator approval, suspension, and reactivation with traceable decisions and role-based access.
-- Expose agent eligibility for assisted cash-in and cash-out; authoritative wallet balances and financial journals remain with Wallet and Ledger Services.
-- Display agent float using the financial services' contracts. Do not maintain an independently spendable copy of the balance or directly credit wallets.
-- Route float replenishment and cash operations through authorized, idempotent financial workflows; never treat an uncertain financial outcome as a failed posting.
-- Define access controls, customer authorization, cash-operation limits, and reconciliation before enabling assisted money movement.
-- Introduce versioned schema migrations under `src/main/resources/db/migration` with the first agent model; Hibernate validates the schema instead of creating it.
-- Protect business documents and personal information, restrict review access, and redact sensitive data in logs.
-- Other services must use the Distribution Service contract rather than accessing its database directly.
-
-Distributor hierarchies, commission sharing, and advanced liquidity management belong to later releases. No agent endpoints, wallet clients, authentication integrations, or money movement are exposed in this initialization.
+Tokens require the configured issuer, expiry, audience `boodoo-distribution-api`, signed integrator_id, signed actor_type service and a stable subject. Scopes are checked independently. Tenant/actor headers cannot override claims. Use HTTPS in deployed traffic. Invalid requests return 400, authentication 401, authorization 403, unknown/foreign resources 404, state/idempotency conflicts 409, and storage unavailability 503 with sanitized problem details. No end-user OTP is sent or verified.
