@@ -1,0 +1,10 @@
+CREATE TABLE transfers(id UUID PRIMARY KEY,integrator_id VARCHAR(64) NOT NULL,idempotency_key VARCHAR(128) NOT NULL,actor_id VARCHAR(128) NOT NULL,fingerprint CHAR(64) NOT NULL,sender_wallet UUID NOT NULL,recipient_wallet UUID NOT NULL,amount BIGINT NOT NULL CHECK(amount>0),max_fee BIGINT NOT NULL CHECK(max_fee>=0),currency VARCHAR(3) NOT NULL CHECK(currency='XOF'),state VARCHAR(16) NOT NULL CHECK(state IN ('CREATED','AUTHORIZED','RESERVING','RESERVED','POSTING','POSTED','COMPLETED','REJECTED')),context JSONB,journal_id UUID,last_code VARCHAR(64),lease_token UUID,lease_until TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(integrator_id,idempotency_key),CHECK(sender_wallet<>recipient_wallet));
+CREATE INDEX transfers_sender_history_idx ON transfers(integrator_id,sender_wallet,id);
+CREATE INDEX transfers_recipient_history_idx ON transfers(integrator_id,recipient_wallet,id);
+CREATE INDEX transfers_recovery_idx ON transfers(integrator_id,state,lease_until,id);
+CREATE FUNCTION protect_transfer_intent() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Transfer history cannot be deleted';END IF;
+ IF (to_jsonb(NEW)-ARRAY['state','context','journal_id','last_code','lease_token','lease_until','updated_at']) IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['state','context','journal_id','last_code','lease_token','lease_until','updated_at']) THEN RAISE EXCEPTION 'Financial intent is immutable';END IF;
+ IF NEW.state<>OLD.state AND NOT ((OLD.state='CREATED' AND NEW.state IN ('AUTHORIZED','REJECTED')) OR (OLD.state='AUTHORIZED' AND NEW.state IN ('RESERVING','REJECTED')) OR (OLD.state='RESERVING' AND NEW.state='RESERVED') OR (OLD.state='RESERVED' AND NEW.state='POSTING') OR (OLD.state='POSTING' AND NEW.state='POSTED') OR (OLD.state='POSTED' AND NEW.state='COMPLETED')) THEN RAISE EXCEPTION 'Invalid transfer transition';END IF;
+ RETURN NEW;END $$;
+CREATE TRIGGER transfer_guard BEFORE UPDATE OR DELETE ON transfers FOR EACH ROW EXECUTE FUNCTION protect_transfer_intent();

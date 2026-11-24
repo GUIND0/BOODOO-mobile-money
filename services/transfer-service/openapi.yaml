@@ -1,0 +1,79 @@
+openapi: 3.1.0
+info:
+  title: BOODOO P2P Transfer API
+  version: 0.1.0
+  description: Durable XOF P2P intent, controlled orchestration and uncertain-outcome recovery. No OTP, cash-in/out, merchant payment or reversal.
+paths:
+  /v1/transfers:
+    post:
+      operationId: createP2PTransfer
+      description: Trusted integration service plus transfers:write. Actor-bound financial idempotency; PIN is verified only before initial authorization and never persisted. Dedicated configured transfer-service credentials are used downstream.
+      security: [{callerBearer: []}]
+      parameters:
+        - {in: header, name: Idempotency-Key, required: true, schema: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [senderWalletId, recipientWalletId, amount, maxFee, currency, pin]
+              properties:
+                senderWalletId: {type: string, format: uuid}
+                recipientWalletId: {type: string, format: uuid}
+                amount: {type: integer, format: int64, minimum: 1}
+                maxFee: {type: integer, format: int64, minimum: 0}
+                currency: {type: string, enum: [XOF]}
+                pin: {type: string, pattern: '^[0-9]{6}$', writeOnly: true}
+      responses:
+        '201': {description: COMPLETED live transfer view; Location and Idempotency-Replayed identify the operation}
+        '202': {description: Pending/uncertain or posted-awaiting-finalization view; retry the original key or inspect Location}
+        '400': {description: Invalid body or key, fractional money, numeric PIN or identical wallets}
+        '401': {description: Invalid caller token}
+        '403': {description: Missing scope or trusted service identity}
+        '409': {description: Key conflicts with financial intent or caller}
+        '422': {description: Definitive rejection before financial reservation/posting, with controlled lastCode}
+        '503': {description: Storage failure; outcome may be uncertain, retain original key}
+    get:
+      operationId: listWalletTransferHistory
+      description: Trusted integration service plus transfers:read; live UUID pages of recorded attempts, not a chronological export.
+      security: [{callerBearer: []}]
+      parameters:
+        - {in: query, name: walletId, required: true, schema: {type: string, format: uuid}}
+        - {in: query, name: after, schema: {type: string, format: uuid}}
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200': {description: items and nullable nextAfter}
+  /v1/transfers/{id}:
+    get:
+      operationId: getTransfer
+      description: Tenant-scoped transfers:read. POSTED already represents a recorded ledger effect even if finalization remains pending.
+      security: [{callerBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Transfer view with state, principal/fee, journalId and lastCode; no PIN or credentials}
+        '404': {description: Unknown or foreign transfer}
+  /internal/v1/transfers/{id}/resume:
+    post:
+      operationId: resumeAuthorizedTransfer
+      description: transfers:resume plus signed service subject exactly transfer-service. Cannot authorize CREATED work without the original PIN step. No request body.
+      security: [{callerBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '201': {description: Completed original transfer}
+        '202': {description: Pending/recoverable original transfer}
+        '403': {description: Wrong worker identity or scope}
+  /internal/v1/transfers/recoverable:
+    get:
+      operationId: listRecoverableTransfers
+      description: transfers:resume plus exact transfer-service subject; returns IDs excluding unauthorized CREATED and terminal/busy work.
+      security: [{callerBearer: []}]
+      parameters:
+        - {in: query, name: after, schema: {type: string, format: uuid}}
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200': {description: Bounded UUID array}
+components:
+  securitySchemes:
+    callerBearer: {type: http, scheme: bearer, bearerFormat: JWT}
