@@ -1,0 +1,3 @@
+CREATE TABLE price_quotes(id UUID PRIMARY KEY,integrator_id VARCHAR(64) NOT NULL,idempotency_key VARCHAR(128) NOT NULL,fingerprint CHAR(64) NOT NULL,actor_id VARCHAR(128) NOT NULL,reference UUID NOT NULL,amount BIGINT NOT NULL CHECK(amount>0),fee BIGINT NOT NULL CHECK(fee>=0),policy_version VARCHAR(64) NOT NULL,expires_at TIMESTAMPTZ NOT NULL,snapshot JSONB NOT NULL,UNIQUE(integrator_id,idempotency_key),UNIQUE(integrator_id,reference));
+CREATE FUNCTION immutable_quote() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Quotes are immutable'; END $$;
+CREATE TRIGGER quote_immutable BEFORE UPDATE OR DELETE ON price_quotes FOR EACH ROW EXECUTE FUNCTION immutable_quote();

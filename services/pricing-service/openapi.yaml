@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: Pricing Service — immutable transfer quotes
+  version: 0.1.0
+paths:
+  /internal/v1/quotes:
+    post:
+      operationId: createQuote
+      description: Service-only pricing:quotes:write. Idempotency-Key required. Body reference UUID, positive amount int64 and currency XOF. Integer fee uses explicit configured policy.
+      security: [{serviceBearer: []}]
+      responses:
+        '201': {description: Immutable quote snapshot with expiry and Idempotency-Replayed}
+        '400': {description: Invalid fields or monetary overflow}
+        '409': {description: Conflicting key or duplicate reference}
+  /internal/v1/quotes/{id}:
+    get:
+      operationId: getQuote
+      description: Service-only pricing:quotes:read; no-store original quote, which may already be expired.
+      security: [{serviceBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Quote snapshot}
+        '404': {description: Unknown or foreign quote}
+components:
+  securitySchemes:
+    serviceBearer: {type: http, scheme: bearer, bearerFormat: JWT}
