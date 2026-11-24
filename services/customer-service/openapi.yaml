@@ -140,6 +140,42 @@ paths:
         '403': {description: Missing customers:read}
         '404': {description: Unknown or foreign reference}
         '503': {description: Customer storage unavailable}
+  /internal/v1/customers/{customerId}/kyc-approval:
+    get:
+      operationId: getCurrentKycApproval
+      summary: Read current KYC approval metadata for a trusted service
+      description: >-
+        Requires customers:kyc:read, signed actor_type service and a stable subject.
+        Checks active decision, frozen revision and evidence expiry at checkedAt UTC.
+        A point-in-time observation only, not financial authorization or a validity lease.
+      security:
+        - partnerBearer: []
+      parameters:
+        - in: path
+          name: customerId
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Current metadata, Cache-Control no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [customerId, kycStatus, profileVersion, decisionId, reviewedAt, approvalCurrent, checkedAt]
+                properties:
+                  customerId: {type: string, format: uuid}
+                  kycStatus: {type: string, enum: [PENDING, UNDER_REVIEW, APPROVED, REJECTED]}
+                  profileVersion: {type: integer, format: int64}
+                  decisionId: {type: [string, 'null'], format: uuid}
+                  reviewedAt: {type: [string, 'null'], format: date-time}
+                  approvalCurrent: {type: boolean}
+                  checkedAt: {type: string, format: date-time}
+        '400': {description: Invalid customer UUID}
+        '401': {description: Missing or invalid bearer identity}
+        '403': {description: Missing scope or service identity}
+        '404': {description: Unknown or foreign customer}
+        '503': {description: Customer storage unavailable}
   /internal/v1/customers/{customerId}/ownership:
     get:
       operationId: checkCustomerOwnership

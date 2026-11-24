@@ -715,6 +715,60 @@ class CustomerServiceApplicationTests {
         return HTTP.send(request.build(),HttpResponse.BodyHandlers.ofString());
     }
 
+    private String approvalToken(String tenant) throws Exception {
+        return actorToken(tenant,"customers:kyc:read","wallet-service","service");
+    }
+    private HttpResponse<String> approval(UUID customer,String token) throws Exception {
+        var builder=HttpRequest.newBuilder(uri("/internal/v1/customers/"+customer+"/kyc-approval")).GET().header("X-Integrator-Id","partner-b");
+        if(token!=null)builder.header("Authorization","Bearer "+token);
+        return HTTP.send(builder.build(),HttpResponse.BodyHandlers.ofString());
+    }
+    @Test void internalApprovalReflectsActualIndependentReviewAndExposesOnlyMetadata() throws Exception {
+        var fixture=submittedFixture();UUID customer=fixture.get(0),submission=fixture.get(1);
+        assertThat(json.readTree(approval(customer,approvalToken("partner-a")).body()).get("approvalCurrent").asBoolean()).isFalse();
+        assertThat(decideKyc(customer,submission,APPROVAL,"approve",operatorToken("partner-a","reviewer")).statusCode()).isEqualTo(201);
+        var response=approval(customer,approvalToken("partner-a"));var body=json.readTree(response.body());
+        assertThat(response.statusCode()).isEqualTo(200);assertThat(response.headers().firstValue("Cache-Control")).contains("no-store");
+        assertThat(body.get("approvalCurrent").asBoolean()).isTrue();assertThat(body.get("profileVersion").asLong()).isEqualTo(3);
+        assertThat(body.get("decisionId").isNull()).isFalse();assertThat(body.size()).isEqualTo(7);
+        assertThat(response.body()).doesNotContain("documents","reference","firstName","submittedBy","reviewedBy","reasonCode");
+    }
+    @Test void internalApprovalExpiresAtUtcBoundaryWithoutChangingHistoricalStatus() throws Exception {
+        var fixture=submittedFixture();UUID customer=fixture.get(0);
+        decideKyc(customer,fixture.get(1),APPROVAL,"approve",operatorToken("partner-a","reviewer"));
+        org.mockito.Mockito.when(customerClock.instant()).thenReturn(Instant.parse("2999-12-31T23:59:59Z"));
+        assertThat(json.readTree(approval(customer,approvalToken("partner-a")).body()).get("approvalCurrent").asBoolean()).isTrue();
+        org.mockito.Mockito.when(customerClock.instant()).thenReturn(Instant.parse("3000-01-01T00:00:00Z"));
+        var body=json.readTree(approval(customer,approvalToken("partner-a")).body());
+        assertThat(body.get("approvalCurrent").asBoolean()).isFalse();assertThat(body.get("kycStatus").asString()).isEqualTo("APPROVED");
+        assertThat(jdbc.queryForObject("SELECT kyc_status FROM customers",String.class)).isEqualTo("APPROVED");
+    }
+    @Test void internalApprovalRejectsUntrustedActorsAndHidesForeignCustomers() throws Exception {
+        UUID id=createProfileFixture();
+        assertThat(approval(id,null).statusCode()).isEqualTo(401);
+        for(String token:List.of(scopedToken("partner-a","kyc:read"),actorToken("partner-a","customers:kyc:read","operator","operator"),actorToken("partner-a","customers:kyc:read",null,"service")))
+            assertThat(approval(id,token).statusCode()).isEqualTo(403);
+        assertThat(approval(id,approvalToken("partner-b")).statusCode()).isEqualTo(404);
+        assertThat(approval(UUID.randomUUID(),approvalToken("partner-a")).statusCode()).isEqualTo(404);
+        var pending=json.readTree(approval(id,approvalToken("partner-a")).body());
+        assertThat(pending.get("approvalCurrent").asBoolean()).isFalse();assertThat(pending.get("decisionId").isNull()).isTrue();
+    }
+    @Test void internalApprovalFailsClosedWhenFrozenRevisionIsNoLongerCurrent() throws Exception {
+        var fixture=submittedFixture();UUID id=fixture.get(0);
+        decideKyc(id,fixture.get(1),APPROVAL,"approve",operatorToken("partner-a","reviewer"));
+        jdbc.update("UPDATE customers SET profile_version=profile_version+1 WHERE id=?",id);
+        assertThat(json.readTree(approval(id,approvalToken("partner-a")).body()).get("approvalCurrent").asBoolean()).isFalse();
+    }
+    @Test void internalApprovalFollowsTheActiveDossierAfterRejectionAndResubmission() throws Exception {
+        var fixture=submittedFixture();UUID id=fixture.get(0);
+        decideKyc(id,fixture.get(1),REJECTION,"reject",operatorToken("partner-a","reviewer"));
+        assertThat(json.readTree(approval(id,approvalToken("partner-a")).body()).get("approvalCurrent").asBoolean()).isFalse();
+        assertThat(submitKyc(id,DOCUMENTS,"resubmit","\"3\"",actorToken("partner-a","kyc:submit","submitter",null)).statusCode()).isEqualTo(201);
+        var body=json.readTree(approval(id,approvalToken("partner-a")).body());
+        assertThat(body.get("kycStatus").asString()).isEqualTo("UNDER_REVIEW");assertThat(body.get("decisionId").isNull()).isTrue();
+        assertThat(body.get("approvalCurrent").asBoolean()).isFalse();
+    }
+
     private void assertCounts(int expected) {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM customers", Integer.class)).isEqualTo(expected);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM customer_creation_requests", Integer.class)).isEqualTo(expected);
