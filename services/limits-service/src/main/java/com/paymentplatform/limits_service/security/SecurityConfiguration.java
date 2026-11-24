@@ -49,6 +49,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST,"/internal/v1/reservations").hasAuthority("SCOPE_limits:reservations:write")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/reservations/*").hasAuthority("SCOPE_limits:reservations:read")
                         .requestMatchers(HttpMethod.POST,"/internal/v1/reservations/*/confirm","/internal/v1/reservations/*/release").hasAuthority("SCOPE_limits:reservations:settle")
+                        .requestMatchers(HttpMethod.POST,"/internal/v1/reservation-references/*/cancel").hasAuthority("SCOPE_limits:reservations:settle")
                         .anyRequest().denyAll())
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())

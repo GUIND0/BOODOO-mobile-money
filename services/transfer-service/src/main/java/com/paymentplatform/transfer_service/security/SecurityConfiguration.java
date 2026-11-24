@@ -50,6 +50,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET,"/v1/transfers","/v1/transfers/*").hasAuthority("SCOPE_transfers:read")
                         .requestMatchers(HttpMethod.POST,"/internal/v1/transfers/*/resume").hasAuthority("SCOPE_transfers:resume")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/transfers/recoverable").hasAuthority("SCOPE_transfers:resume")
+                        .requestMatchers(HttpMethod.POST,"/v1/transfers/*/cancellation").hasAuthority("SCOPE_transfers:cancel")
                         .anyRequest().denyAll())
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())

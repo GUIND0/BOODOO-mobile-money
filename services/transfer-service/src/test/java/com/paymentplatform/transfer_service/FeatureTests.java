@@ -109,6 +109,8 @@ class FeatureTests {
     }
     private static void peer(com.sun.net.httpserver.HttpExchange exchange)throws Exception {
         LAST_BEARER.set(exchange.getRequestHeaders().getFirst("Authorization"));String path=exchange.getRequestURI().getPath();String raw=new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8);var body=raw.isBlank()?PEER_JSON.createObjectNode():PEER_JSON.readTree(raw);
+        if(path.endsWith("/cancel") && path.startsWith("/internal/v1/journal-references/")){String ref=path.split("/")[4];String receipt=RECEIPTS.get(ref);if(receipt==null)reply(exchange,200,Map.of("reference",ref,"status","CANCELLED"));else reply(exchange,200,Map.of("reference",ref,"status","POSTED","journalId",PEER_JSON.readTree(receipt).get("id").asString()));return;}
+        if(path.endsWith("/cancel") && path.startsWith("/internal/v1/reservation-references/")){reply(exchange,200,Map.of("reference",path.split("/")[4],"status","CANCELLED"));return;}
         if(path.startsWith("/internal/v1/wallets/")){
             UUID id=UUID.fromString(path.split("/")[4]);if(!id.equals(SENDER)&&!id.equals(RECIPIENT)){reply(exchange,404,Map.of());return;}
             reply(exchange,200,Map.of("walletId",id,"customerId",id.equals(SENDER)?SENDER_CUSTOMER:RECIPIENT_CUSTOMER,"ledgerAccountId",id.equals(SENDER)?SENDER_ACCOUNT:RECIPIENT_ACCOUNT,"currency","XOF","status","ACTIVE","eligible",MODE.get()!=6,"checkedAt",Instant.now().toString()));return;
@@ -182,5 +184,14 @@ class FeatureTests {
         String fractional=body(20,"739152").replace("\"amount\":100","\"amount\":100.5");assertThat(post("/v1/transfers",fractional,"fraction",token()).statusCode()).isEqualTo(400);
         String numericPin=body(20,"739152").replace("\"pin\":\"739152\"","\"pin\":739152");assertThat(post("/v1/transfers",numericPin,"numeric-pin",token()).statusCode()).isEqualTo(400);
     }
+
+ @Test void cancellationResolvesLostLedgerAcknowledgementAsPosted()throws Exception{
+  MODE.set(3);var uncertain=transfer("cancel-posted");assertThat(uncertain.statusCode()).isEqualTo(202);MODE.set(0);
+  var cancelled=post("/v1/transfers/"+id(uncertain)+"/cancellation","",null,service("partner-a","transfers:cancel"));assertThat(cancelled.statusCode()).isEqualTo(201);assertThat(json.readTree(cancelled.body()).get("status").asString()).isEqualTo("COMPLETED");assertThat(POSTINGS.get()).isEqualTo(1);
+ }
+ @Test void cancellationBeforeAuthorizationFencesIntentAndIsIdempotent()throws Exception{
+  MODE.set(5);var pending=transfer("cancel-created");MODE.set(0);String path="/v1/transfers/"+id(pending)+"/cancellation";
+  var result=post(path,"",null,service("partner-a","transfers:cancel"));assertThat(result.statusCode()).isEqualTo(200);assertThat(json.readTree(result.body()).get("status").asString()).isEqualTo("CANCELLED");assertThat(post(path,"",null,service("partner-a","transfers:cancel")).body()).isEqualTo(result.body());assertThat(POSTINGS.get()).isZero();assertThat(PIN_COMPARISONS.get()).isZero();
+ }
 
 }

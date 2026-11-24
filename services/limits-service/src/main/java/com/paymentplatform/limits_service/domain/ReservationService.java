@@ -8,6 +8,8 @@ import com.paymentplatform.limits_service.api.ApiException;import jakarta.valida
  public record Result(Reservation response,boolean replayed){}
  private void lock(String tenant,UUID customer){jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",(org.springframework.jdbc.core.RowCallbackHandler)row->{},tenant.length()+":"+tenant+customer);}
  @Transactional(timeout=10) public Result reserve(String tenant,String actor,String key,Request request){
+  referenceLock(tenant,request.reference());
+  if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM limit_cancellations WHERE integrator_id=? AND reference=?)",Boolean.class,tenant,request.reference())))throw conflict("RESERVATION_CANCELLED");
   lock(tenant,request.customerId());String hash=RequestKeys.hash(json.writeValueAsString(request),actor);
   var old=jdbc.query("SELECT fingerprint,snapshot::text FROM limit_reservations WHERE integrator_id=? AND idempotency_key=?",(row,n)->List.of(row.getString(1),row.getString(2)),tenant,key);
   if(!old.isEmpty()){if(!old.getFirst().getFirst().equals(hash))throw conflict("IDEMPOTENCY_CONFLICT");return new Result(json.readValue(old.getFirst().get(1),Reservation.class),true);}
@@ -18,6 +20,16 @@ import com.paymentplatform.limits_service.api.ApiException;import jakarta.valida
   var response=new Reservation(UUID.randomUUID(),request.reference(),request.customerId(),request.amount(),"XOF","RESERVED",policy.version(),policy.perTransaction(),policy.daily(),policy.monthly(),day,month,expiry);
   int rows=jdbc.update("INSERT INTO limit_reservations VALUES (?,?,?,?,?,?,?,?,?,?,?,?::jsonb) ON CONFLICT DO NOTHING",response.id(),tenant,key,hash,actor,request.reference(),request.customerId(),request.amount(),day,month,"RESERVED",json.writeValueAsString(response));
   if(rows!=1)throw conflict("RESERVATION_REFERENCE_OR_KEY_EXISTS");return new Result(response,false);
+ }
+ private void referenceLock(String tenant,UUID reference){jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",(org.springframework.jdbc.core.RowCallbackHandler)r->{},"limit-reference:"+tenant+":"+reference);}
+ public record Cancellation(UUID reference,String status){}
+ @Transactional(timeout=10) public Cancellation cancel(String tenant,String actor,UUID reference){
+  referenceLock(tenant,reference);
+  var prior=jdbc.query("SELECT actor_id FROM limit_cancellations WHERE integrator_id=? AND reference=?",(r,n)->r.getString(1),tenant,reference);
+  if(!prior.isEmpty()){if(!prior.getFirst().equals(actor))throw conflict("CANCELLATION_ACTOR_CONFLICT");return new Cancellation(reference,"CANCELLED");}
+  var rows=jdbc.query("SELECT id FROM limit_reservations WHERE integrator_id=? AND reference=?",(r,n)->r.getObject(1,UUID.class),tenant,reference);
+  if(!rows.isEmpty())settle(tenant,actor,rows.getFirst(),"RELEASED");
+  jdbc.update("INSERT INTO limit_cancellations VALUES (?,?,?)",tenant,reference,actor);return new Cancellation(reference,"CANCELLED");
  }
  private BigDecimal usage(String tenant,UUID customer,LocalDate bucket,boolean day){return jdbc.queryForObject("SELECT COALESCE(sum(amount::numeric),0) FROM limit_reservations WHERE integrator_id=? AND customer_id=? AND "+(day?"day_bucket":"month_bucket")+"=? AND status<>'RELEASED'",BigDecimal.class,tenant,customer,bucket);}
  public Reservation get(String tenant,UUID id){return jdbc.query("SELECT snapshot::text,status FROM limit_reservations WHERE integrator_id=? AND id=?",(row,n)->json.readValue(row.getString(1),Reservation.class).withStatus(row.getString(2)),tenant,id).stream().findFirst().orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND,"RESERVATION_NOT_FOUND","Reservation not found for this integrator."));}

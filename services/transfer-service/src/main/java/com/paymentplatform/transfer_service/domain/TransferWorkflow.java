@@ -6,12 +6,35 @@ import com.paymentplatform.transfer_service.api.ApiException;import com.paymentp
  public record Result(TransferStore.View response,boolean replayed){}
  private record Wallet(UUID id,UUID customer,UUID account){}
  public Result accept(String tenant,String actor,String key,TransferRequest request){var begin=store.begin(tenant,actor,key,request);return new Result(store.view(execute(tenant,begin.row().id(),request.pin())),begin.replayed());}
+ public TransferStore.Row recover(String tenant,UUID id){var row=store.get(tenant,id);if(row.context()!=null&&Set.of("AUTHORIZED","RESERVING","RESERVED","POSTING").contains(row.state())&&!row.context().quoteExpires().isAfter(Instant.now().plusSeconds(5)))return cancel(tenant,row.actor(),id);return resume(tenant,id);}
  public TransferStore.Row resume(String tenant,UUID id){return execute(tenant,id,null);}
+ public TransferStore.Row cancel(String tenant,String actor,UUID id){
+  var row=store.get(tenant,id);if(!row.actor().equals(actor))throw new ApiException(HttpStatus.FORBIDDEN,"TRANSFER_ACTOR_MISMATCH","Only the original caller can request cancellation.");
+  if(Set.of("COMPLETED","REJECTED","CANCELLED").contains(row.state()))return row;
+  if(row.state().equals("POSTED"))return resume(tenant,id);
+  UUID lease=store.claim(tenant,id);if(lease==null)return store.get(tenant,id);
+  try{row=store.get(tenant,id);if(!row.state().equals("POSTED"))store.save(tenant,id,lease,"CANCELLING",row.context(),row.journal(),"CANCELLATION_REQUESTED");}finally{store.release(tenant,id,lease);}
+  return resume(tenant,id);
+ }
  private TransferStore.Row execute(String tenant,UUID id,String pin){
-  var row=store.get(tenant,id);if(row.state().equals("COMPLETED")||row.state().equals("REJECTED"))return row;
+  var row=store.get(tenant,id);if(row.state().equals("COMPLETED")||row.state().equals("REJECTED")||row.state().equals("CANCELLED"))return row;
   if(row.state().equals("CREATED")&&pin==null)return row;UUID lease=store.claim(tenant,id);if(lease==null)return store.get(tenant,id);
   try{
    String token=credentials.bearer(tenant);row=store.get(tenant,id);
+   if(row.state().equals("CANCELLING")){
+    var barrier=client.post("ledger","/internal/v1/journal-references/"+id+"/cancel",null,null,token);require(barrier,200);
+    if(!id.equals(DependencyClient.uuid(barrier.body(),"reference")))throw DependencyClient.unavailable();
+    String outcome=DependencyClient.text(barrier.body(),"status");
+    if(outcome.equals("POSTED")){
+     var receipt=client.get("ledger","/internal/v1/journals/by-reference?reference="+id,token);require(receipt,200);verifyReceipt(row,receipt.body());
+     if(!DependencyClient.uuid(barrier.body(),"journalId").equals(DependencyClient.uuid(receipt.body(),"id")))throw DependencyClient.unavailable();
+     row=store.save(tenant,id,lease,"POSTED",row.context(),DependencyClient.uuid(receipt.body(),"id"),null);
+    }else if(outcome.equals("CANCELLED")){
+     var allowance=client.post("limits","/internal/v1/reservation-references/"+id+"/cancel",null,null,token);require(allowance,200);
+     if(!id.equals(DependencyClient.uuid(allowance.body(),"reference"))||!"CANCELLED".equals(DependencyClient.text(allowance.body(),"status")))throw DependencyClient.unavailable();
+     return store.save(tenant,id,lease,"CANCELLED",row.context(),null,"CANCELLED_BY_CALLER");
+    }else throw DependencyClient.unavailable();
+   }
    if(row.state().equals("CREATED")){
     var sender=wallet(row.sender(),token);var recipient=wallet(row.recipient(),token);if(sender.account().equals(recipient.account()))throw reject("SAME_ACCOUNT");
     var quote=client.post("pricing","/internal/v1/quotes",Map.of("reference",id,"amount",row.amount(),"currency","XOF"),"quote-"+id,token);require(quote,201);
