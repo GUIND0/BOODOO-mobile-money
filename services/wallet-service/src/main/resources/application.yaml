@@ -25,6 +25,8 @@ management:
       show-details: never
 
 boodoo:
+  controls:
+    service-tokens-json: ${WALLET_SERVICE_TOKENS_JSON:{}}
   security:
     issuer: ${WALLET_JWT_ISSUER_URI}
     jwk-set-uri: ${WALLET_JWT_JWK_SET_URI}

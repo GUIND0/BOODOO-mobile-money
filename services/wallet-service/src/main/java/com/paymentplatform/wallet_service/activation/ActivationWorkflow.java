@@ -1,7 +1,7 @@
 package com.paymentplatform.wallet_service.activation;
 import com.paymentplatform.wallet_service.api.WalletApiException;import com.paymentplatform.wallet_service.client.DependencyClient;import org.springframework.http.HttpStatus;import org.springframework.stereotype.Service;import java.time.Instant;import java.util.*;
 @Service public class ActivationWorkflow {
- private final ActivationStore store;private final DependencyClient client;public ActivationWorkflow(ActivationStore store,DependencyClient client){this.store=store;this.client=client;}
+ private final ControlCredentials controlCredentials;private final ActivationStore store;private final DependencyClient client;public ActivationWorkflow(ActivationStore store,DependencyClient client,ControlCredentials controlCredentials){this.controlCredentials=controlCredentials;this.store=store;this.client=client;}
  public record Result(ActivationStore.Activation response,boolean replayed){}
  public record Eligibility(UUID walletId,UUID customerId,String currency,String status,UUID ledgerAccountId,boolean eligible,Instant checkedAt){}
  public Result activate(String tenant,String actor,UUID id,String key,String token){
@@ -23,7 +23,7 @@ import com.paymentplatform.wallet_service.api.WalletApiException;import com.paym
  }
  public Object control(String tenant,UUID id,Map<String,Object> request,String token){
   var wallet=store.wallet(tenant,id);if(wallet.account()==null)throw conflict("WALLET_NOT_ACTIVE");
-  if("OPEN".equals(request.get("state")))requireFacts(wallet,token);
+  if("OPEN".equals(request.get("state")))requireFacts(wallet,controlCredentials.bearer(tenant));
   var result=client.post("ledger","/internal/v1/accounts/"+wallet.account()+"/control",request,null,token);
   if(result.status()==409)throw conflict("CONTROL_STATE_CONFLICT");if(result.status()==412)throw new WalletApiException(HttpStatus.PRECONDITION_FAILED,"CONTROL_VERSION_CONFLICT","Read the account control version before retrying.");if(result.status()!=200)throw DependencyClient.unavailable();return result.body();
  }
