@@ -6,10 +6,9 @@ spring:
     username: ${AUDIT_DB_USER:audit_user}
     password: ${AUDIT_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   flyway:
     enabled: true
 
@@ -24,3 +23,9 @@ management:
   endpoint:
     health:
       show-details: never
+
+boodoo:
+  security:
+    issuer: ${AUDIT_JWT_ISSUER_URI}
+    jwk-set-uri: ${AUDIT_JWT_JWK_SET_URI}
+    audience: ${AUDIT_JWT_AUDIENCE:boodoo-audit-api}

@@ -1,58 +1,11 @@
-# Audit Service
+# Audit Service — immutable service events
 
-Audit Service will own traceable records of sensitive actions, administrative approvals, access events, and business decisions.
+POST /internal/v1/events requires audit:events:write and a trusted service identity. Body contains id/resourceId UUIDs, type (WALLET_ACTIVATED, TRANSFER_POSTED, TRANSFER_REJECTED, LIMIT_RESERVED, KYC_APPROVED or POLICY_CHANGED), and a controlled uppercase reasonCode. Event ID is the idempotency key, scoped by tenant and bound to producer and canonical details. Exact retries return the original 201 event; conflicting reuse returns 409. The authenticated producer and server receipt timestamp are recorded. No arbitrary payload, PIN, contact details, evidence, user-entered message or client timestamp is accepted.
 
-This PR initializes the application only. It does not implement audit schemas, ingestion APIs, append-only enforcement, search/export APIs, and event transport.
+GET /internal/v1/events?resourceId=<uuid> requires audit:events:read. Optional limit 1–100 (default 50) and after UUID provide live ascending UUID pagination; nextAfter null means the current end. This is not chronological order or an export snapshot. Database triggers prohibit update/delete. Restrict database permissions and retention separately; these records are authenticated producer assertions, not cryptographic proof against a database administrator or independent proof that money moved. Consumers must consult the authoritative ledger for financial truth. Network delivery from other services remains their responsibility; retries must retain event ID.
 
-## Requirements
+## Run and verify
 
-- JDK 25 or later
-- Docker with a running daemon, including for tests
-- Maven is downloaded by the included wrapper
+Set `AUDIT_DB_PASSWORD`, `AUDIT_JWT_ISSUER_URI` and `AUDIT_JWT_JWK_SET_URI`, then run `docker compose up -d --wait` and `./mvnw spring-boot:run` from this service. Existing DB/API ports are retained. Flyway owns the schema; JDBC replaces the unused JPA initialization. `./mvnw -o clean verify` exercises real PostgreSQL 17 and ephemeral signed JWTs.
 
-## Run locally
-
-From `services/audit-service`:
-
-```sh
-export AUDIT_DB_PASSWORD='choose-a-local-development-password'
-docker compose up -d --wait
-./mvnw spring-boot:run
-```
-
-The application listens on port `8092`; PostgreSQL 17 is exposed on `127.0.0.1:5443`. These defaults avoid the other BOODOO service ports.
-
-Configuration overrides: `AUDIT_DB_URL`, `AUDIT_DB_USER`, `AUDIT_DB_PASSWORD`, and `AUDIT_SERVER_PORT`. Compose provisions the fixed database/user names `audit_db`/`audit_user`; URL and user overrides target an independently provisioned database. Never commit real credentials or customer data.
-
-Stop the development database with `docker compose down`. Its named volume retains data.
-
-```sh
-curl --fail http://localhost:8092/actuator/health
-```
-
-## Verify
-
-```sh
-./mvnw verify
-```
-
-Tests start an isolated PostgreSQL 17 container, check database connectivity and HTTP health, and reject unauthenticated requests outside health. They require neither the development database nor the development password. They fail if Docker is unavailable rather than silently skipping verification.
-
-## Initial access policy
-
-Only `/actuator/health` is public, with component details hidden. All other requests are denied. Form login, HTTP Basic, logout, request caching, generated development users, and server-side session creation are disabled. CSRF protection retains Spring Security defaults. Authentication mechanisms and explicit permissions must be added with the business workflows.
-
-## Boundary and next implementation
-
-- Own audit-event ingestion, event identifiers, retention metadata, and authorized search/export; accounting journals remain in Ledger Service.
-- Define a versioned event envelope with actor, action, target reference, outcome, occurrence/receipt times, source identity, and correlation identifiers.
-- Authenticate producers and derive their source identity from trusted credentials rather than trusting arbitrary actor or source fields in a submitted event.
-- Make event ingestion idempotent by producer and event identifier. Detect conflicting duplicates and account for delayed or out-of-order events.
-- Preserve accepted records through append-only storage controls and a defined tamper-evidence mechanism; record corrections as linked new events.
-- Exclude passwords, PINs, OTPs, tokens, signing keys, and unnecessary personal data from audit payloads. Apply access restrictions and approved retention rules.
-- Define durable delivery, acknowledgement, and failure handling with producers. Sensitive actions must not silently lose their audit trail.
-- Audit access to audit searches and exports, and separate event-reader permissions from administration and retention-management permissions.
-- Introduce versioned migrations under `src/main/resources/db/migration` with the first persistence model. Hibernate validates schemas rather than creating them.
-- Keep other services out of this database; define authenticated APIs or versioned events for integration.
-
-No business endpoints, real credentials, external integrations, or cross-service operations are enabled by this initialization.
+Tokens require the configured issuer, expiry, audience `boodoo-audit-api`, signed integrator_id, signed actor_type service and a stable subject. Scopes are checked independently. Tenant/actor headers cannot override claims. Use HTTPS in deployed traffic. Invalid requests return 400, authentication 401, authorization 403, unknown/foreign resources 404, state/idempotency conflicts 409, and storage unavailability 503 with sanitized problem details. No end-user OTP is sent or verified.
