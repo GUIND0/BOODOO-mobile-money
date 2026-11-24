@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BOODOO Wallet Provisioning API
   version: 0.1.0
-  description: Pending XOF wallet metadata only. No balance, ledger posting, financial activation, funding, transfers or OTP.
+  description: XOF wallet provisioning, controlled accounting-backed activation and fresh operational eligibility. No funding, transfer posting or OTP.
 paths:
   /v1/wallets:
     post:
@@ -80,6 +80,28 @@ paths:
         '403': {description: Missing read scope or customer ownership permission}
         '404': {description: Unknown or foreign wallet or customer}
         '503': {description: Ownership or storage unavailable; metadata is not returned}
+  /internal/v1/wallets/{id}/activate:
+    post:
+      operationId: activateWallet
+      description: Service-only wallets:activate; Idempotency-Key required. Current KYC and PIN configuration, deterministic liability account and zero balance are checked. Token needs all downstream audiences/scopes.
+      security: [{partnerBearer: []}]
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+        - {in: header, name: Idempotency-Key, required: true, schema: {type: string}}
+      responses:
+        '201': {description: Completed activation snapshot; original key replays without new side effects}
+        '409': {description: Ineligible facts, conflicting key/actor or nonempty account}
+        '503': {description: Dependency unavailable; intent remains resumable}
+  /internal/v1/wallets/{id}/operational-state:
+    get:
+      operationId: getWalletOperationalState
+      description: Service-only wallets:eligibility:read; active wallets recheck fresh KYC and PIN configuration. Observation only, not a financial authorization lease.
+      security: [{partnerBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: walletId, customerId, currency, status, nullable ledgerAccountId, eligible and checkedAt}
+        '404': {description: Unknown or foreign wallet}
+        '503': {description: Eligibility dependency could not be checked}
 components:
   securitySchemes:
     partnerBearer:
@@ -95,7 +117,7 @@ components:
         id: {type: string, format: uuid}
         customerId: {type: string, format: uuid}
         currency: {type: string, enum: [XOF]}
-        status: {type: string, enum: [PENDING]}
+        status: {type: string, enum: [PENDING, ACTIVE]}
         createdAt: {type: string, format: date-time}
     Problem:
       type: object
