@@ -1,57 +1,13 @@
-# Limits Service
+# Limits Service — atomic allowance reservations
 
-Limits Service will own wallet balance ceilings, per-operation limits, and daily/monthly transaction allowances.
+Configure LIMITS_POLICY_VERSION, LIMITS_PER_TRANSACTION, LIMITS_DAILY, LIMITS_MONTHLY (positive integer XOF) and LIMITS_RESERVATION_TTL_SECONDS (10–3600). No legal/business ceilings are assumed. This initial policy covers outgoing P2P total debits by customer, not wallet balance ceilings. The caller must establish authoritative wallet/customer ownership; this service does not replace it.
 
-This PR initializes the application only. It does not implement limit schemas, policy APIs, allowance reservations, and usage counters.
+POST /internal/v1/reservations requires limits:reservations:write, Idempotency-Key and body reference/customerId UUIDs, positive integer amount and currency XOF. Customer-scoped advisory locks atomically check per-transfer/daily/monthly usage. RESERVED and CONFIRMED count; RELEASED does not. Policy parameters and UTC authorization day/month are snapshotted. Limits apply to reservation time, not posting date. Response expiresAt is the earlier of configured TTL or UTC midnight. Execution must check it before posting; no automatic release occurs because expired or uncertain payments may already have posted.
 
-## Requirements
+GET /internal/v1/reservations/{id} requires limits:reservations:read. POST /{id}/confirm or /release requires limits:reservations:settle and the original service subject. Terminal transitions are idempotent, opposing transitions conflict. Confirm after expiry records a previously authorized outcome; it does not renew authorization. Release only after authoritative proof that the transfer did not post. Original POST retries always replay the original RESERVED snapshot; GET returns live settlement state. Reference and actor-bound key are tenant-unique. No balance is reserved by this API; overdraft protection remains in Ledger Service.
 
-- JDK 25 or later
-- Docker with a running daemon, including for tests
-- Maven is downloaded by the included wrapper
+## Run and verify
 
-## Run locally
+Set `LIMITS_DB_PASSWORD`, `LIMITS_JWT_ISSUER_URI` and `LIMITS_JWT_JWK_SET_URI`, then run `docker compose up -d --wait` and `./mvnw spring-boot:run` from this service. Existing DB/API ports are retained. Flyway owns the schema; JDBC replaces the unused JPA initialization. `./mvnw -o clean verify` exercises real PostgreSQL 17 and ephemeral signed JWTs.
 
-From `services/limits-service`:
-
-```sh
-export LIMITS_DB_PASSWORD='choose-a-local-development-password'
-docker compose up -d --wait
-./mvnw spring-boot:run
-```
-
-The application listens on port `8089`; PostgreSQL 17 is exposed on `127.0.0.1:5440`. These defaults avoid the other BOODOO service ports.
-
-Configuration overrides: `LIMITS_DB_URL`, `LIMITS_DB_USER`, `LIMITS_DB_PASSWORD`, and `LIMITS_SERVER_PORT`. Compose provisions the fixed database/user names `limits_db`/`limits_user`; URL and user overrides target an independently provisioned database. Never commit real credentials or customer data.
-
-Stop the development database with `docker compose down`. Its named volume retains data.
-
-```sh
-curl --fail http://localhost:8089/actuator/health
-```
-
-## Verify
-
-```sh
-./mvnw verify
-```
-
-Tests start an isolated PostgreSQL 17 container, check database connectivity and HTTP health, and reject unauthenticated requests outside health. They require neither the development database nor the development password. They fail if Docker is unavailable rather than silently skipping verification.
-
-## Initial access policy
-
-Only `/actuator/health` is public, with component details hidden. All other requests are denied. Form login, HTTP Basic, logout, request caching, generated development users, and server-side session creation are disabled. CSRF protection retains Spring Security defaults. Authentication mechanisms and explicit permissions must be added with the business workflows.
-
-## Boundary and next implementation
-
-- Own versioned limit policies by customer verification tier, actor category, operation type, and currency; KYC decisions remain in Customer Service.
-- Define per-transaction, wallet-balance, daily, and monthly limits with explicit time-zone and period-boundary rules.
-- Define atomic allowance reservation, confirmation, release, and expiry so simultaneous requests cannot independently consume the same remaining allowance.
-- Scope reservations to a stable transaction identifier; make retries idempotent and reject identifier reuse with different request details.
-- Resolve uncertain payment outcomes before releasing reserved allowance. A timeout does not establish that a payment failed.
-- Keep balance ownership and overdraft prevention in the financial ledger; limit checks cannot replace atomic financial constraints.
-- Audit policy changes and overrides, define recovery and usage reconciliation, and fail safely when an authoritative limit decision is unavailable.
-- Introduce versioned migrations under `src/main/resources/db/migration` with the first persistence model. Hibernate validates schemas rather than creating them.
-- Keep other services out of this database; define authenticated APIs or versioned events for integration.
-
-No business endpoints, real credentials, external integrations, or cross-service operations are enabled by this initialization.
+Tokens require the configured issuer, expiry, audience `boodoo-limits-api`, signed integrator_id, signed actor_type service and a stable subject. Scopes are checked independently. Tenant/actor headers cannot override claims. Use HTTPS in deployed traffic. Invalid requests return 400, authentication 401, authorization 403, unknown/foreign resources 404, state/idempotency conflicts 409, and storage unavailability 503 with sanitized problem details. No end-user OTP is sent or verified.

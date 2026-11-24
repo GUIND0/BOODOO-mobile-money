@@ -6,10 +6,9 @@ spring:
     username: ${LIMITS_DB_USER:limits_user}
     password: ${LIMITS_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   flyway:
     enabled: true
 
@@ -24,3 +23,15 @@ management:
   endpoint:
     health:
       show-details: never
+
+boodoo:
+  security:
+    issuer: ${LIMITS_JWT_ISSUER_URI}
+    jwk-set-uri: ${LIMITS_JWT_JWK_SET_URI}
+    audience: ${LIMITS_JWT_AUDIENCE:boodoo-limits-api}
+  limits:
+    version: ${LIMITS_POLICY_VERSION}
+    per-transaction: ${LIMITS_PER_TRANSACTION}
+    daily: ${LIMITS_DAILY}
+    monthly: ${LIMITS_MONTHLY}
+    ttl-seconds: ${LIMITS_RESERVATION_TTL_SECONDS}
