@@ -61,3 +61,6 @@ Account locks are acquired in UUID order. Derived normal balances cannot become 
 Run `./mvnw -o clean verify` with Docker. Tests use real PostgreSQL 17 and ephemeral signed JWTs. They cover classifications, service-only authorization, tenant isolation, canonical replay, actor-bound keys, concurrent creation, uniqueness, database immutability and rollback/retry after an injected persistence failure.
 
 Next accounting work: linked reversal workflows, posting recovery/orchestration, external settlement reconciliation and controlled wallet/account binding. Wallet activation and transfer orchestration remain separate controlled workflows. No financial operation is implemented by this account API.
+
+### Posting grants
+Every journal POST needs `ledger:journals:write` plus a signed financial grant. `ledger:post:transfer` permits one LIABILITY debit, one LIABILITY credit and optionally one INCOME credit. `ledger:post:settlement` permits an ASSET/LIABILITY pair in either direction. Balancing, tenant ownership and nonnegative normal balances still apply. `ledger:post:adjustment` permits general shapes and belongs only to tightly controlled accounting operators' backend. Provision transfer-service and distribution-service credentials accordingly before enabling traffic. OAuth issuer configuration, not a request header, grants these permissions.
