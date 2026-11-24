@@ -54,7 +54,7 @@ class FeatureTests {
         registry.add("boodoo.security.jwk-set-uri", () -> "http://127.0.0.1:" + KEYS.getAddress().getPort() + "/jwks");
     }
     @BeforeEach void clear() {
-        jdbc.execute("TRUNCATE transfers");
+        jdbc.execute("TRUNCATE merchant_events,merchants,transfers");
     }
     @AfterAll static void close() { HTTP.close(); KEYS.stop(0); }
 
@@ -182,5 +182,15 @@ class FeatureTests {
         String fractional=body(20,"739152").replace("\"amount\":100","\"amount\":100.5");assertThat(post("/v1/transfers",fractional,"fraction",token()).statusCode()).isEqualTo(400);
         String numericPin=body(20,"739152").replace("\"pin\":\"739152\"","\"pin\":739152");assertThat(post("/v1/transfers",numericPin,"numeric-pin",token()).statusCode()).isEqualTo(400);
     }
+
+ @Test void merchantPaymentsReusePinAndFinancialSafetyWhileSuspensionStopsNewPayments()throws Exception{
+  UUID merchant=UUID.randomUUID();String operator=auth("partner-a","merchants:write merchants:control","merchant-operator","operator");
+  var created=post("/v1/merchants",json.writeValueAsString(Map.of("id",merchant,"walletId",RECIPIENT,"code","SHOP_001")),null,operator);assertThat(created.statusCode()).isEqualTo(201);
+  String request=json.writeValueAsString(Map.of("merchantId",merchant,"senderWalletId",SENDER,"amount",100,"maxFee",20,"pin","739152")),paymentToken=service("partner-a","payments:write");
+  var paid=post("/v1/merchant-payments",request,"merchant-one",paymentToken);assertThat(paid.statusCode()).isEqualTo(201);assertThat(post("/v1/merchant-payments",request,"merchant-one",paymentToken).body()).isEqualTo(paid.body());assertThat(POSTINGS.get()).isEqualTo(1);
+  assertThat(post("/internal/v1/merchants/"+merchant+"/state",json.writeValueAsString(Map.of("id",UUID.randomUUID(),"state","SUSPENDED","expectedVersion",1,"reasonCode","INVESTIGATION")),null,operator).statusCode()).isEqualTo(200);
+  assertThat(post("/v1/merchant-payments",request,"merchant-two",paymentToken).statusCode()).isEqualTo(409);
+  assertThat(get("/v1/merchants/"+merchant,service("partner-b","merchants:read")).statusCode()).isEqualTo(404);
+ }
 
 }
