@@ -41,16 +41,16 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, org.springframework.beans.factory.ObjectProvider<EndpointPolicy> policies) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(requests -> requests
+                .authorizeHttpRequests(requests -> { requests
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST,"/internal/v1/cash-operations").hasAuthority("SCOPE_cash:request")
                         .requestMatchers(HttpMethod.POST,"/internal/v1/cash-operations/*/approval").hasAuthority("SCOPE_cash:approve")
                         .requestMatchers(HttpMethod.POST,"/internal/v1/cash-operations/*/disbursement").hasAuthority("SCOPE_cash:disburse")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/cash-operations/*").hasAuthority("SCOPE_cash:read")
-                        .anyRequest().denyAll())
+                        ; policies.orderedStream().forEach(policy -> policy.apply(requests)); requests.anyRequest().denyAll(); })
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())
                 .formLogin(form -> form.disable())
