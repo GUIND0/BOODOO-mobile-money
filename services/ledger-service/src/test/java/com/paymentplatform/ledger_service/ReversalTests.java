@@ -44,7 +44,7 @@ class ReversalTests {
         registry.add("boodoo.security.jwk-set-uri", () -> "http://127.0.0.1:" + KEYS.getAddress().getPort() + "/jwks");
     }
     @BeforeEach void clear() {
-        jdbc.execute("TRUNCATE journal_reversals,journal_requests,journal_entries,journals,account_creation_requests,ledger_accounts");
+        jdbc.execute("TRUNCATE journal_requests,journal_entries,journals,account_creation_requests,ledger_accounts CASCADE");
     }
     @AfterAll static void close() { HTTP.close(); KEYS.stop(0); }
 
@@ -96,7 +96,7 @@ class ReversalTests {
             server.start(); return server;
         } catch (Exception e) { throw new ExceptionInInitializerError(e); }
     }
-    private String journalToken(String tenant) throws Exception {return auth(tenant,SCOPES+" ledger:journals:write ledger:journals:read ledger:balances:read ledger:reconciliation:read","wallet-service","service");}
+    private String journalToken(String tenant) throws Exception {return auth(tenant,SCOPES+" ledger:post:adjustment ledger:journals:write ledger:journals:read ledger:balances:read ledger:reconciliation:read","wallet-service","service");}
     private UUID account(String code,String type) throws Exception {return UUID.fromString(json.readTree(post(code,type,code,service("partner-a")).body()).get("id").asString());}
     private HttpResponse<String> journal(UUID reference,UUID debit,UUID credit,long amount,String key,String token) throws Exception {
         return journalBody(json.writeValueAsString(Map.of("reference",reference,"entries",List.of(Map.of("accountId",debit,"side","DEBIT","amount",amount),Map.of("accountId",credit,"side","CREDIT","amount",amount)))),key,token);
