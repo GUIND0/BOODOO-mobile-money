@@ -1,0 +1,224 @@
+{
+  "info": {
+    "name": "BOODOO API pilot",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Set valid gateway/destination-audience bearer credentials and resource IDs first. KYC review, activation and operator controls use protected internal APIs documented in feature contracts. Keep idempotency keys unchanged when retrying an uncertain operation."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bearerToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8080"
+    },
+    {
+      "key": "bearerToken",
+      "value": ""
+    },
+    {
+      "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "senderWalletId",
+      "value": ""
+    },
+    {
+      "key": "recipientWalletId",
+      "value": ""
+    },
+    {
+      "key": "transferId",
+      "value": ""
+    },
+    {
+      "key": "merchantId",
+      "value": ""
+    },
+    {
+      "key": "pin",
+      "value": ""
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "example-001"
+    }
+  ],
+  "item": [
+    {
+      "name": "Create customer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/customers",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"externalReference\": \"example-001\",\n  \"firstName\": \"Test\",\n  \"lastName\": \"Example\",\n  \"phoneNumber\": \"+22370000001\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Read customer",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/v1/customers/{{customerId}}"
+      }
+    },
+    {
+      "name": "Create PIN",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/customers/{{customerId}}/pin",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pin\": \"{{pin}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Create pending wallet",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/wallets",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"currency\": \"XOF\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Transfer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/transfers",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"senderWalletId\": \"{{senderWalletId}}\",\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": 100,\n  \"maxFee\": 10,\n  \"currency\": \"XOF\",\n  \"pin\": \"{{pin}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Read transfer",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/v1/transfers/{{transferId}}"
+      }
+    },
+    {
+      "name": "Cancel transfer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/transfers/{{transferId}}/cancellation"
+      }
+    },
+    {
+      "name": "Read merchant",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/v1/merchants/{{merchantId}}"
+      }
+    },
+    {
+      "name": "Merchant payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/merchant-payments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"merchantId\": \"{{merchantId}}\",\n  \"senderWalletId\": \"{{senderWalletId}}\",\n  \"amount\": 100,\n  \"maxFee\": 10,\n  \"pin\": \"{{pin}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -37,6 +37,7 @@ class FeatureTests {
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         for(var entry:PEERS.entrySet())registry.add("boodoo.dependencies.origins."+entry.getKey(),()->"http://127.0.0.1:"+entry.getValue().getAddress().getPort());
+        registry.add("management.endpoints.web.exposure.include",()->"health,info,metrics");
         registry.add("boodoo.gateway.allowed-origins",()->"https://integrator.example");
         registry.add("boodoo.security.issuer", () -> ISSUER);
         registry.add("boodoo.security.audience", () -> "boodoo-gateway-api");
@@ -126,5 +127,12 @@ class FeatureTests {
         }
         assertThat(CALLS.get()).isZero();
     }
+
+ @Test void routesMerchantPaymentsAndProtectsGlobalOperationalMetrics()throws Exception{
+  assertThat(post("/v1/merchant-payments","{}","merchant",token()).statusCode()).isEqualTo(200);assertThat(TARGET.get()).isEqualTo("transfer");
+  assertThat(get("/actuator/metrics",token()).statusCode()).isEqualTo(403);
+  assertThat(get("/actuator/metrics",auth("partner-a","operations:metrics:read","integration-service","service")).statusCode()).isEqualTo(403);
+  assertThat(get("/actuator/metrics",auth("partner-a","operations:metrics:read","metrics-collector","service")).statusCode()).isEqualTo(200);
+ }
 
 }

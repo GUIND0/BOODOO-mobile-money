@@ -1,0 +1,11 @@
+**
+!deploy/
+!deploy/Healthcheck.java
+!services/
+!services/*/
+!services/*/pom.xml
+!services/*/mvnw
+!services/*/.mvn/
+!services/*/.mvn/**
+!services/*/src/
+!services/*/src/**

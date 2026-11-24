@@ -26,6 +26,7 @@ import com.paymentplatform.api_gateway.client.DependencyClient;import jakarta.se
   if(path.matches("/v1/customers/[^/]+/notifications(?:/[^/]+/acknowledgement)?"))return "notification";
   if(path.equals("/v1/customers")||path.startsWith("/v1/customers/"))return "customer";
   if(path.equals("/v1/wallets")||path.startsWith("/v1/wallets/"))return "wallet";
+  if(path.equals("/v1/merchants")||path.matches("/v1/merchants/[^/]+")||path.equals("/v1/merchant-payments"))return "transfer";
   if(path.equals("/v1/transfers")||path.startsWith("/v1/transfers/"))return "transfer";
   throw invalid(HttpStatus.NOT_FOUND,"ROUTE_NOT_FOUND");
  }

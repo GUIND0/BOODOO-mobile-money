@@ -1,0 +1,33 @@
+groups:
+  - name: boodoo-pilot
+    rules:
+      - alert: BoodooServiceUnavailable
+        expr: boodoo_service_up == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "BOODOO service health probe is failing"}
+      - alert: BoodooMetricsUnreadable
+        expr: boodoo_metrics_readable == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Check the collector credential rotation and audience grants"}
+      - alert: BoodooTransferRecoveryDelayed
+        expr: boodoo_transfers_oldest_seconds > 120
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Inspect durable pending transfers; do not infer failed money movement"}
+      - alert: BoodooWebhookDeadLetter
+        expr: boodoo_webhooks_dead > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Inspect receiver outcomes before explicitly redriving webhooks"}
+      - alert: BoodooReconciliationFinding
+        expr: boodoo_reconciliation_discrepancies > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Inspect immutable external statement discrepancies or incomplete reports"}
+      - alert: BoodooCollectorStale
+        expr: time() - boodoo_probe_timestamp_seconds > 60
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "Operational collector probes are stale"}

@@ -1,0 +1,590 @@
+name: boodoo-pilot
+services:
+  api-gateway:
+    image: ${BOODOO_REGISTRY:?}/api-gateway:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      API_GATEWAY_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      API_GATEWAY_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      API_GATEWAY_WALLET_BASE_URL: http://wallet-service:8080
+      API_GATEWAY_CUSTOMER_BASE_URL: http://customer-service:8080
+      API_GATEWAY_IDENTITY_BASE_URL: http://identity-service:8080
+      API_GATEWAY_LEDGER_BASE_URL: http://ledger-service:8080
+      API_GATEWAY_PRICING_BASE_URL: http://pricing-service:8080
+      API_GATEWAY_LIMITS_BASE_URL: http://limits-service:8080
+      API_GATEWAY_RISK_BASE_URL: http://risk-compliance-service:8080
+      API_GATEWAY_AUDIT_BASE_URL: http://audit-service:8080
+      API_GATEWAY_NOTIFICATION_BASE_URL: http://notification-service:8080
+      API_GATEWAY_TRANSFER_BASE_URL: http://transfer-service:8080
+    ports: ["127.0.0.1:8080:8080"]
+  audit-service:
+    image: ${BOODOO_REGISTRY:?}/audit-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      AUDIT_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      AUDIT_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      AUDIT_DB_URL: jdbc:postgresql://audit-db:5432/audit_db
+      AUDIT_DB_USER: audit_user
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:?}
+      AUDIT_WALLET_BASE_URL: http://wallet-service:8080
+      AUDIT_CUSTOMER_BASE_URL: http://customer-service:8080
+      AUDIT_IDENTITY_BASE_URL: http://identity-service:8080
+      AUDIT_LEDGER_BASE_URL: http://ledger-service:8080
+      AUDIT_PRICING_BASE_URL: http://pricing-service:8080
+      AUDIT_LIMITS_BASE_URL: http://limits-service:8080
+      AUDIT_RISK_BASE_URL: http://risk-compliance-service:8080
+      AUDIT_AUDIT_BASE_URL: http://audit-service:8080
+      AUDIT_NOTIFICATION_BASE_URL: http://notification-service:8080
+      AUDIT_TRANSFER_BASE_URL: http://transfer-service:8080
+    depends_on:
+      audit-db: {condition: service_healthy}
+  audit-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: audit_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${AUDIT_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: audit_user
+      APP_DB_PASSWORD: ${AUDIT_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d audit_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - audit-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  customer-service:
+    image: ${BOODOO_REGISTRY:?}/customer-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      CUSTOMER_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      CUSTOMER_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      CUSTOMER_DB_URL: jdbc:postgresql://customer-db:5432/customer_db
+      CUSTOMER_DB_USER: customer_user
+      CUSTOMER_DB_PASSWORD: ${CUSTOMER_DB_PASSWORD:?}
+      CUSTOMER_WALLET_BASE_URL: http://wallet-service:8080
+      CUSTOMER_CUSTOMER_BASE_URL: http://customer-service:8080
+      CUSTOMER_IDENTITY_BASE_URL: http://identity-service:8080
+      CUSTOMER_LEDGER_BASE_URL: http://ledger-service:8080
+      CUSTOMER_PRICING_BASE_URL: http://pricing-service:8080
+      CUSTOMER_LIMITS_BASE_URL: http://limits-service:8080
+      CUSTOMER_RISK_BASE_URL: http://risk-compliance-service:8080
+      CUSTOMER_AUDIT_BASE_URL: http://audit-service:8080
+      CUSTOMER_NOTIFICATION_BASE_URL: http://notification-service:8080
+      CUSTOMER_TRANSFER_BASE_URL: http://transfer-service:8080
+    depends_on:
+      customer-db: {condition: service_healthy}
+  customer-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: customer_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${CUSTOMER_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: customer_user
+      APP_DB_PASSWORD: ${CUSTOMER_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d customer_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - customer-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  distribution-service:
+    image: ${BOODOO_REGISTRY:?}/distribution-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      DISTRIBUTION_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      DISTRIBUTION_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      DISTRIBUTION_DB_URL: jdbc:postgresql://distribution-db:5432/distribution_db
+      DISTRIBUTION_DB_USER: distribution_user
+      DISTRIBUTION_DB_PASSWORD: ${DISTRIBUTION_DB_PASSWORD:?}
+      DISTRIBUTION_WALLET_BASE_URL: http://wallet-service:8080
+      DISTRIBUTION_CUSTOMER_BASE_URL: http://customer-service:8080
+      DISTRIBUTION_IDENTITY_BASE_URL: http://identity-service:8080
+      DISTRIBUTION_LEDGER_BASE_URL: http://ledger-service:8080
+      DISTRIBUTION_PRICING_BASE_URL: http://pricing-service:8080
+      DISTRIBUTION_LIMITS_BASE_URL: http://limits-service:8080
+      DISTRIBUTION_RISK_BASE_URL: http://risk-compliance-service:8080
+      DISTRIBUTION_AUDIT_BASE_URL: http://audit-service:8080
+      DISTRIBUTION_NOTIFICATION_BASE_URL: http://notification-service:8080
+      DISTRIBUTION_TRANSFER_BASE_URL: http://transfer-service:8080
+      DISTRIBUTION_SERVICE_TOKENS_JSON: ${DISTRIBUTION_SERVICE_TOKENS_JSON:-}
+      DISTRIBUTION_SETTLEMENT_ACCOUNTS_JSON: ${DISTRIBUTION_SETTLEMENT_ACCOUNTS_JSON:-}
+      DISTRIBUTION_ZERO_FEE_CASH_ENABLED: ${DISTRIBUTION_ZERO_FEE_CASH_ENABLED:-}
+    depends_on:
+      distribution-db: {condition: service_healthy}
+  distribution-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: distribution_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${DISTRIBUTION_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: distribution_user
+      APP_DB_PASSWORD: ${DISTRIBUTION_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d distribution_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - distribution-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  identity-service:
+    image: ${BOODOO_REGISTRY:?}/identity-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      IDENTITY_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      IDENTITY_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      IDENTITY_DB_URL: jdbc:postgresql://identity-db:5432/identity_db
+      IDENTITY_DB_USER: identity_user
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?}
+      IDENTITY_PIN_PEPPER: ${IDENTITY_PIN_PEPPER:?}
+      IDENTITY_WALLET_BASE_URL: http://wallet-service:8080
+      IDENTITY_CUSTOMER_BASE_URL: http://customer-service:8080
+      IDENTITY_IDENTITY_BASE_URL: http://identity-service:8080
+      IDENTITY_LEDGER_BASE_URL: http://ledger-service:8080
+      IDENTITY_PRICING_BASE_URL: http://pricing-service:8080
+      IDENTITY_LIMITS_BASE_URL: http://limits-service:8080
+      IDENTITY_RISK_BASE_URL: http://risk-compliance-service:8080
+      IDENTITY_AUDIT_BASE_URL: http://audit-service:8080
+      IDENTITY_NOTIFICATION_BASE_URL: http://notification-service:8080
+      IDENTITY_TRANSFER_BASE_URL: http://transfer-service:8080
+    depends_on:
+      identity-db: {condition: service_healthy}
+  identity-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: identity_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${IDENTITY_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: identity_user
+      APP_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d identity_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - identity-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  ledger-service:
+    image: ${BOODOO_REGISTRY:?}/ledger-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      LEDGER_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      LEDGER_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      LEDGER_DB_URL: jdbc:postgresql://ledger-db:5432/ledger_db
+      LEDGER_DB_USER: ledger_user
+      LEDGER_DB_PASSWORD: ${LEDGER_DB_PASSWORD:?}
+      LEDGER_WALLET_BASE_URL: http://wallet-service:8080
+      LEDGER_CUSTOMER_BASE_URL: http://customer-service:8080
+      LEDGER_IDENTITY_BASE_URL: http://identity-service:8080
+      LEDGER_LEDGER_BASE_URL: http://ledger-service:8080
+      LEDGER_PRICING_BASE_URL: http://pricing-service:8080
+      LEDGER_LIMITS_BASE_URL: http://limits-service:8080
+      LEDGER_RISK_BASE_URL: http://risk-compliance-service:8080
+      LEDGER_AUDIT_BASE_URL: http://audit-service:8080
+      LEDGER_NOTIFICATION_BASE_URL: http://notification-service:8080
+      LEDGER_TRANSFER_BASE_URL: http://transfer-service:8080
+    depends_on:
+      ledger-db: {condition: service_healthy}
+  ledger-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ledger_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${LEDGER_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: ledger_user
+      APP_DB_PASSWORD: ${LEDGER_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d ledger_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - ledger-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  limits-service:
+    image: ${BOODOO_REGISTRY:?}/limits-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      LIMITS_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      LIMITS_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      LIMITS_DB_URL: jdbc:postgresql://limits-db:5432/limits_db
+      LIMITS_DB_USER: limits_user
+      LIMITS_DB_PASSWORD: ${LIMITS_DB_PASSWORD:?}
+      LIMITS_WALLET_BASE_URL: http://wallet-service:8080
+      LIMITS_CUSTOMER_BASE_URL: http://customer-service:8080
+      LIMITS_IDENTITY_BASE_URL: http://identity-service:8080
+      LIMITS_LEDGER_BASE_URL: http://ledger-service:8080
+      LIMITS_PRICING_BASE_URL: http://pricing-service:8080
+      LIMITS_LIMITS_BASE_URL: http://limits-service:8080
+      LIMITS_RISK_BASE_URL: http://risk-compliance-service:8080
+      LIMITS_AUDIT_BASE_URL: http://audit-service:8080
+      LIMITS_NOTIFICATION_BASE_URL: http://notification-service:8080
+      LIMITS_TRANSFER_BASE_URL: http://transfer-service:8080
+      LIMITS_POLICY_VERSION: ${LIMITS_POLICY_VERSION:-}
+      LIMITS_PER_TRANSACTION: ${LIMITS_PER_TRANSACTION:-}
+      LIMITS_DAILY: ${LIMITS_DAILY:-}
+      LIMITS_MONTHLY: ${LIMITS_MONTHLY:-}
+      LIMITS_RESERVATION_TTL_SECONDS: ${LIMITS_RESERVATION_TTL_SECONDS:-}
+    depends_on:
+      limits-db: {condition: service_healthy}
+  limits-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: limits_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${LIMITS_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: limits_user
+      APP_DB_PASSWORD: ${LIMITS_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d limits_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - limits-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  notification-service:
+    image: ${BOODOO_REGISTRY:?}/notification-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      NOTIFICATION_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      NOTIFICATION_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      NOTIFICATION_DB_URL: jdbc:postgresql://notification-db:5432/notification_db
+      NOTIFICATION_DB_USER: notification_user
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?}
+      NOTIFICATION_WALLET_BASE_URL: http://wallet-service:8080
+      NOTIFICATION_CUSTOMER_BASE_URL: http://customer-service:8080
+      NOTIFICATION_IDENTITY_BASE_URL: http://identity-service:8080
+      NOTIFICATION_LEDGER_BASE_URL: http://ledger-service:8080
+      NOTIFICATION_PRICING_BASE_URL: http://pricing-service:8080
+      NOTIFICATION_LIMITS_BASE_URL: http://limits-service:8080
+      NOTIFICATION_RISK_BASE_URL: http://risk-compliance-service:8080
+      NOTIFICATION_AUDIT_BASE_URL: http://audit-service:8080
+      NOTIFICATION_NOTIFICATION_BASE_URL: http://notification-service:8080
+      NOTIFICATION_TRANSFER_BASE_URL: http://transfer-service:8080
+      NOTIFICATION_WEBHOOK_DESTINATIONS_JSON: ${NOTIFICATION_WEBHOOK_DESTINATIONS_JSON:-}
+      NOTIFICATION_WEBHOOK_ENABLED: ${NOTIFICATION_WEBHOOK_ENABLED:-}
+    depends_on:
+      notification-db: {condition: service_healthy}
+  notification-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: notification_user
+      APP_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d notification_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - notification-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  pricing-service:
+    image: ${BOODOO_REGISTRY:?}/pricing-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      PRICING_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      PRICING_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      PRICING_DB_URL: jdbc:postgresql://pricing-db:5432/pricing_db
+      PRICING_DB_USER: pricing_user
+      PRICING_DB_PASSWORD: ${PRICING_DB_PASSWORD:?}
+      PRICING_WALLET_BASE_URL: http://wallet-service:8080
+      PRICING_CUSTOMER_BASE_URL: http://customer-service:8080
+      PRICING_IDENTITY_BASE_URL: http://identity-service:8080
+      PRICING_LEDGER_BASE_URL: http://ledger-service:8080
+      PRICING_PRICING_BASE_URL: http://pricing-service:8080
+      PRICING_LIMITS_BASE_URL: http://limits-service:8080
+      PRICING_RISK_BASE_URL: http://risk-compliance-service:8080
+      PRICING_AUDIT_BASE_URL: http://audit-service:8080
+      PRICING_NOTIFICATION_BASE_URL: http://notification-service:8080
+      PRICING_TRANSFER_BASE_URL: http://transfer-service:8080
+      PRICING_POLICY_VERSION: ${PRICING_POLICY_VERSION:-}
+      PRICING_BASIS_POINTS: ${PRICING_BASIS_POINTS:-}
+      PRICING_FLAT_FEE: ${PRICING_FLAT_FEE:-}
+      PRICING_QUOTE_TTL_SECONDS: ${PRICING_QUOTE_TTL_SECONDS:-}
+    depends_on:
+      pricing-db: {condition: service_healthy}
+  pricing-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pricing_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${PRICING_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: pricing_user
+      APP_DB_PASSWORD: ${PRICING_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d pricing_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pricing-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  reconciliation-service:
+    image: ${BOODOO_REGISTRY:?}/reconciliation-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      RECONCILIATION_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      RECONCILIATION_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      RECONCILIATION_DB_URL: jdbc:postgresql://reconciliation-db:5432/reconciliation_db
+      RECONCILIATION_DB_USER: reconciliation_user
+      RECONCILIATION_DB_PASSWORD: ${RECONCILIATION_DB_PASSWORD:?}
+      RECONCILIATION_WALLET_BASE_URL: http://wallet-service:8080
+      RECONCILIATION_CUSTOMER_BASE_URL: http://customer-service:8080
+      RECONCILIATION_IDENTITY_BASE_URL: http://identity-service:8080
+      RECONCILIATION_LEDGER_BASE_URL: http://ledger-service:8080
+      RECONCILIATION_PRICING_BASE_URL: http://pricing-service:8080
+      RECONCILIATION_LIMITS_BASE_URL: http://limits-service:8080
+      RECONCILIATION_RISK_BASE_URL: http://risk-compliance-service:8080
+      RECONCILIATION_AUDIT_BASE_URL: http://audit-service:8080
+      RECONCILIATION_NOTIFICATION_BASE_URL: http://notification-service:8080
+      RECONCILIATION_TRANSFER_BASE_URL: http://transfer-service:8080
+      RECONCILIATION_SERVICE_TOKENS_JSON: ${RECONCILIATION_SERVICE_TOKENS_JSON:-}
+    depends_on:
+      reconciliation-db: {condition: service_healthy}
+  reconciliation-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: reconciliation_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${RECONCILIATION_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: reconciliation_user
+      APP_DB_PASSWORD: ${RECONCILIATION_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d reconciliation_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - reconciliation-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  risk-compliance-service:
+    image: ${BOODOO_REGISTRY:?}/risk-compliance-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      RISK_COMPLIANCE_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      RISK_COMPLIANCE_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      RISK_POLICY_VERSION: ${RISK_POLICY_VERSION:?}
+      RISK_AUTOMATIC_AMOUNT: ${RISK_AUTOMATIC_AMOUNT:?}
+      RISK_EVALUATION_TTL_SECONDS: ${RISK_EVALUATION_TTL_SECONDS:?}
+      RISK_COMPLIANCE_DB_URL: jdbc:postgresql://risk-compliance-db:5432/risk_compliance_db
+      RISK_COMPLIANCE_DB_USER: risk_compliance_user
+      RISK_COMPLIANCE_DB_PASSWORD: ${RISK_COMPLIANCE_DB_PASSWORD:?}
+      RISK_COMPLIANCE_WALLET_BASE_URL: http://wallet-service:8080
+      RISK_COMPLIANCE_CUSTOMER_BASE_URL: http://customer-service:8080
+      RISK_COMPLIANCE_IDENTITY_BASE_URL: http://identity-service:8080
+      RISK_COMPLIANCE_LEDGER_BASE_URL: http://ledger-service:8080
+      RISK_COMPLIANCE_PRICING_BASE_URL: http://pricing-service:8080
+      RISK_COMPLIANCE_LIMITS_BASE_URL: http://limits-service:8080
+      RISK_COMPLIANCE_RISK_BASE_URL: http://risk-compliance-service:8080
+      RISK_COMPLIANCE_AUDIT_BASE_URL: http://audit-service:8080
+      RISK_COMPLIANCE_NOTIFICATION_BASE_URL: http://notification-service:8080
+      RISK_COMPLIANCE_TRANSFER_BASE_URL: http://transfer-service:8080
+    depends_on:
+      risk-compliance-db: {condition: service_healthy}
+  risk-compliance-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: risk_compliance_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${RISK_COMPLIANCE_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: risk_compliance_user
+      APP_DB_PASSWORD: ${RISK_COMPLIANCE_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d risk_compliance_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - risk-compliance-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  transfer-service:
+    image: ${BOODOO_REGISTRY:?}/transfer-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      TRANSFER_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      TRANSFER_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      TRANSFER_DB_URL: jdbc:postgresql://transfer-db:5432/transfer_db
+      TRANSFER_DB_USER: transfer_user
+      TRANSFER_DB_PASSWORD: ${TRANSFER_DB_PASSWORD:?}
+      TRANSFER_WALLET_BASE_URL: http://wallet-service:8080
+      TRANSFER_CUSTOMER_BASE_URL: http://customer-service:8080
+      TRANSFER_IDENTITY_BASE_URL: http://identity-service:8080
+      TRANSFER_LEDGER_BASE_URL: http://ledger-service:8080
+      TRANSFER_PRICING_BASE_URL: http://pricing-service:8080
+      TRANSFER_LIMITS_BASE_URL: http://limits-service:8080
+      TRANSFER_RISK_BASE_URL: http://risk-compliance-service:8080
+      TRANSFER_AUDIT_BASE_URL: http://audit-service:8080
+      TRANSFER_NOTIFICATION_BASE_URL: http://notification-service:8080
+      TRANSFER_TRANSFER_BASE_URL: http://transfer-service:8080
+      TRANSFER_SERVICE_TOKENS_JSON: ${TRANSFER_SERVICE_TOKENS_JSON:-}
+      TRANSFER_FEE_ACCOUNTS_JSON: ${TRANSFER_FEE_ACCOUNTS_JSON:-}
+      TRANSFER_OAUTH_CLIENTS_JSON: ${TRANSFER_OAUTH_CLIENTS_JSON:-}
+      BOODOO_RECOVERY_ENABLED: ${BOODOO_RECOVERY_ENABLED:-false}
+    depends_on:
+      transfer-db: {condition: service_healthy}
+  transfer-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: transfer_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${TRANSFER_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: transfer_user
+      APP_DB_PASSWORD: ${TRANSFER_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d transfer_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - transfer-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+  wallet-service:
+    image: ${BOODOO_REGISTRY:?}/wallet-service:${BOODOO_IMAGE_TAG:?}
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    environment:
+      SERVER_PORT: "8080"
+      WALLET_JWT_ISSUER_URI: ${JWT_ISSUER_URI:?}
+      WALLET_JWT_JWK_SET_URI: ${JWT_JWK_SET_URI:?}
+      WALLET_SERVICE_TOKENS_JSON: ${WALLET_SERVICE_TOKENS_JSON:-{}}
+      WALLET_DB_URL: jdbc:postgresql://wallet-db:5432/wallet_db
+      WALLET_DB_USER: wallet_user
+      WALLET_DB_PASSWORD: ${WALLET_DB_PASSWORD:?}
+      WALLET_WALLET_BASE_URL: http://wallet-service:8080
+      WALLET_CUSTOMER_BASE_URL: http://customer-service:8080
+      WALLET_IDENTITY_BASE_URL: http://identity-service:8080
+      WALLET_LEDGER_BASE_URL: http://ledger-service:8080
+      WALLET_PRICING_BASE_URL: http://pricing-service:8080
+      WALLET_LIMITS_BASE_URL: http://limits-service:8080
+      WALLET_RISK_BASE_URL: http://risk-compliance-service:8080
+      WALLET_AUDIT_BASE_URL: http://audit-service:8080
+      WALLET_NOTIFICATION_BASE_URL: http://notification-service:8080
+      WALLET_TRANSFER_BASE_URL: http://transfer-service:8080
+    depends_on:
+      wallet-db: {condition: service_healthy}
+  wallet-db:
+    image: ${POSTGRES_IMAGE:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wallet_db
+      POSTGRES_USER: bootstrap
+      POSTGRES_PASSWORD: ${WALLET_DB_ADMIN_PASSWORD:?}
+      APP_DB_USER: wallet_user
+      APP_DB_PASSWORD: ${WALLET_DB_PASSWORD:?}
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U bootstrap -d wallet_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - wallet-data:/var/lib/postgresql/data
+      - ./deploy/init-app-db.sh:/docker-entrypoint-initdb.d/10-app-user.sh:ro
+volumes:
+  audit-data: {}
+  customer-data: {}
+  distribution-data: {}
+  identity-data: {}
+  ledger-data: {}
+  limits-data: {}
+  notification-data: {}
+  pricing-data: {}
+  reconciliation-data: {}
+  risk-compliance-data: {}
+  transfer-data: {}
+  wallet-data: {}
