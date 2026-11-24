@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BOODOO Ledger Accounts API
   version: 0.1.0
-  description: Immutable XOF chart-of-accounts metadata. No journals, balances, posting, wallet activation or movement of funds.
+  description: Service-scoped immutable accounts, balanced XOF journals and derived balances. Wallet activation and transfer orchestration are separate.
 paths:
   /internal/v1/accounts:
     post:
@@ -77,6 +77,81 @@ paths:
         '403': {description: Missing read scope or trusted service identity}
         '404': {description: Unknown or foreign account}
         '503': {description: Storage unavailable}
+  /internal/v1/journals:
+    post:
+      operationId: postJournal
+      summary: Atomically post balanced immutable XOF entries
+      description: Requires service identity and ledger:journals:write. Canonical actor-bound idempotency, unique reference and nonnegative normal balances.
+      security: [{serviceBearer: []}]
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reference, entries]
+              properties:
+                reference: {type: string, format: uuid}
+                entries:
+                  type: array
+                  minItems: 2
+                  maxItems: 20
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [accountId, side, amount]
+                    properties:
+                      accountId: {type: string, format: uuid}
+                      side: {type: string, enum: [DEBIT, CREDIT]}
+                      amount: {type: integer, format: int64, minimum: 1}
+      responses:
+        '201': {description: Immutable journal receipt with ID, reference, currency, createdAt and canonical entries; Idempotency-Replayed indicates a retry}
+        '400': {description: Invalid, duplicate-account or unbalanced entries}
+        '401': {description: Invalid token}
+        '403': {description: Missing scope or service identity}
+        '404': {description: Unknown or foreign account}
+        '409': {description: Key/reference conflict, insufficient normal balance or overflow}
+        '503': {description: Storage unavailable; retry original key}
+  /internal/v1/journals/{id}:
+    get:
+      operationId: getJournal
+      description: Requires ledger:journals:read and service identity. No-store immutable receipt.
+      security: [{serviceBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Journal receipt}
+        '404': {description: Unknown or foreign journal}
+  /internal/v1/journals/by-reference:
+    get:
+      operationId: getJournalByReference
+      description: Requires ledger:journals:read and service identity; resolves uncertain outcomes.
+      security: [{serviceBearer: []}]
+      parameters: [{in: query, name: reference, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Original journal receipt}
+        '404': {description: Reference not posted in this tenant}
+  /internal/v1/accounts/{id}/balance:
+    get:
+      operationId: getAccountBalance
+      description: Requires ledger:balances:read and service identity; derives a current normal balance from immutable entries.
+      security: [{serviceBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: accountId, currency, normalBalance side and integer amountMinorUnits}
+        '404': {description: Unknown or foreign account}
+  /internal/v1/reconciliation/snapshot:
+    get:
+      operationId: getReconciliationSnapshot
+      description: Requires ledger:reconciliation:read and service identity. Internal integrity only; no bank settlement verification.
+      security: [{serviceBearer: []}]
+      responses:
+        '200': {description: journalCount, unbalancedJournals, invalidBalances and checkedAt from one SQL snapshot}
 components:
   securitySchemes:
     serviceBearer:
