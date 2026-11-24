@@ -28,7 +28,7 @@ import java.net.http.*;import java.nio.ByteBuffer;import java.io.ByteArrayOutput
  public static boolean bool(JsonNode body,String key){try{var node=body.get(key);if(node==null||!node.isBoolean())throw unavailable();return node.asBoolean();}catch(Exception e){throw unavailable();}}
  public static UUID uuid(JsonNode body,String key){try{return UUID.fromString(text(body,key));}catch(Exception e){throw unavailable();}}
  @jakarta.annotation.PreDestroy public void close(){http.close();}
- private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
+ public static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
   private final CompletableFuture<byte[]> result=new CompletableFuture<>();private final ByteArrayOutputStream bytes=new ByteArrayOutputStream();private Flow.Subscription subscription;
   public CompletionStage<byte[]> getBody(){return result;}
   public void onSubscribe(Flow.Subscription subscription){this.subscription=subscription;subscription.request(Long.MAX_VALUE);}

@@ -28,6 +28,8 @@ management:
       show-details: never
 
 boodoo:
+  oauth:
+    clients-json: ${TRANSFER_OAUTH_CLIENTS_JSON:{}}
   security:
     issuer: ${TRANSFER_JWT_ISSUER_URI}
     jwk-set-uri: ${TRANSFER_JWT_JWK_SET_URI}
@@ -45,3 +47,6 @@ boodoo:
       ledger: ${TRANSFER_LEDGER_BASE_URL:http://127.0.0.1:8083}
       audit: ${TRANSFER_AUDIT_BASE_URL:http://127.0.0.1:8092}
       notification: ${TRANSFER_NOTIFICATION_BASE_URL:http://127.0.0.1:8087}
+
+# Optional deployment-owned OAuth client configuration. Never store secrets in Git.
+# The adapter takes precedence for configured tenants; failure never falls back to a static token.
