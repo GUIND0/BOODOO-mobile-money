@@ -1,0 +1,7 @@
+package com.paymentplatform.audit_service.api;
+import com.paymentplatform.audit_service.domain.AuditService;import com.paymentplatform.audit_service.security.ServiceActor;import jakarta.validation.Valid;import jakarta.validation.constraints.*;import org.springframework.http.*;import org.springframework.security.core.annotation.AuthenticationPrincipal;import org.springframework.security.oauth2.jwt.Jwt;import org.springframework.web.bind.annotation.*;import java.util.UUID;
+@RestController public class AuditController {
+ private final AuditService service;public AuditController(AuditService service){this.service=service;}
+ @PostMapping("/internal/v1/events") ResponseEntity<?> append(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody AuditService.Request body){var result=service.append(jwt.getClaimAsString("integrator_id"),ServiceActor.requireService(jwt),body);return ResponseEntity.status(201).cacheControl(CacheControl.noStore()).header("Idempotency-Replayed",Boolean.toString(result.replayed())).body(result.event());}
+ @GetMapping("/internal/v1/events") ResponseEntity<?> page(@AuthenticationPrincipal Jwt jwt,@RequestParam UUID resourceId,@RequestParam(required=false) UUID after,@RequestParam(defaultValue="50") @Min(1) @Max(100) int limit){ServiceActor.requireService(jwt);return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.page(jwt.getClaimAsString("integrator_id"),resourceId,after,limit));}
+}
