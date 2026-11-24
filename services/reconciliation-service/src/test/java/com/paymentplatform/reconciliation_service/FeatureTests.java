@@ -48,7 +48,7 @@ class FeatureTests {
         registry.add("boodoo.security.jwk-set-uri", () -> "http://127.0.0.1:" + KEYS.getAddress().getPort() + "/jwks");
     }
     @BeforeEach void clear() {
-        jdbc.execute("TRUNCATE reconciliation_reports");
+        jdbc.execute("TRUNCATE statement_investigations,external_statements,reconciliation_reports");
     }
     @AfterAll static void close() { HTTP.close(); KEYS.stop(0); }
 

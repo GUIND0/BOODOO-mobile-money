@@ -25,6 +25,8 @@ management:
       show-details: never
 
 boodoo:
+  statements:
+    tokens-json: ${RECONCILIATION_SERVICE_TOKENS_JSON:{}}
   security:
     issuer: ${RECONCILIATION_JWT_ISSUER_URI}
     jwk-set-uri: ${RECONCILIATION_JWT_JWK_SET_URI}

@@ -52,6 +52,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET,"/internal/v1/journals/*").hasAuthority("SCOPE_ledger:journals:read")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/accounts/*/balance").hasAuthority("SCOPE_ledger:balances:read")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/reconciliation/snapshot").hasAuthority("SCOPE_ledger:reconciliation:read")
+                        .requestMatchers(HttpMethod.GET,"/internal/v1/accounts/*/statement").hasAuthority("SCOPE_ledger:statements:read")
                         .anyRequest().denyAll())
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())
