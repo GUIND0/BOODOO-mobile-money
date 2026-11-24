@@ -1,0 +1,7 @@
+CREATE TABLE limit_reservations(id UUID PRIMARY KEY,integrator_id VARCHAR(64) NOT NULL,idempotency_key VARCHAR(128) NOT NULL,fingerprint CHAR(64) NOT NULL,actor_id VARCHAR(128) NOT NULL,reference UUID NOT NULL,customer_id UUID NOT NULL,amount BIGINT NOT NULL CHECK(amount>0),day_bucket DATE NOT NULL,month_bucket DATE NOT NULL,status VARCHAR(16) NOT NULL CHECK(status IN ('RESERVED','CONFIRMED','RELEASED')),snapshot JSONB NOT NULL,UNIQUE(integrator_id,idempotency_key),UNIQUE(integrator_id,reference));
+CREATE INDEX reservations_usage_idx ON limit_reservations(integrator_id,customer_id,month_bucket,day_bucket);
+CREATE FUNCTION protect_reservation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF TG_OP='DELETE' THEN RAISE EXCEPTION 'Reservations cannot be deleted'; END IF;
+ IF NEW.id<>OLD.id OR NEW.integrator_id<>OLD.integrator_id OR NEW.idempotency_key<>OLD.idempotency_key OR NEW.fingerprint<>OLD.fingerprint OR NEW.actor_id<>OLD.actor_id OR NEW.reference<>OLD.reference OR NEW.customer_id<>OLD.customer_id OR NEW.amount<>OLD.amount OR NEW.day_bucket<>OLD.day_bucket OR NEW.month_bucket<>OLD.month_bucket OR NEW.snapshot<>OLD.snapshot OR OLD.status<>'RESERVED' OR NEW.status NOT IN ('CONFIRMED','RELEASED') THEN RAISE EXCEPTION 'Invalid reservation transition'; END IF;
+ RETURN NEW; END $$;
+CREATE TRIGGER reservation_state_guard BEFORE UPDATE OR DELETE ON limit_reservations FOR EACH ROW EXECUTE FUNCTION protect_reservation();

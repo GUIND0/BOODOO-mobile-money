@@ -1,0 +1,10 @@
+package com.paymentplatform.limits_service.api;
+import com.paymentplatform.limits_service.domain.ReservationService;import com.paymentplatform.limits_service.security.ServiceActor;import jakarta.validation.Valid;import jakarta.validation.constraints.Pattern;import org.springframework.http.*;import org.springframework.security.core.annotation.AuthenticationPrincipal;import org.springframework.security.oauth2.jwt.Jwt;import org.springframework.web.bind.annotation.*;import java.util.UUID;
+@RestController public class ReservationController {
+ private final ReservationService service;public ReservationController(ReservationService service){this.service=service;}
+ @PostMapping("/internal/v1/reservations") ResponseEntity<?> reserve(@AuthenticationPrincipal Jwt jwt,@RequestHeader("Idempotency-Key") @Pattern(regexp="[A-Za-z0-9][A-Za-z0-9._:-]{0,127}") String key,@Valid @RequestBody ReservationService.Request request){var result=service.reserve(jwt.getClaimAsString("integrator_id"),ServiceActor.requireService(jwt),key,request);return ResponseEntity.status(201).cacheControl(CacheControl.noStore()).header("Idempotency-Replayed",Boolean.toString(result.replayed())).body(result.response());}
+ @GetMapping("/internal/v1/reservations/{id}") ResponseEntity<?> get(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){ServiceActor.requireService(jwt);return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.get(jwt.getClaimAsString("integrator_id"),id));}
+ @PostMapping("/internal/v1/reservations/{id}/confirm") ResponseEntity<?> confirm(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){return settle(jwt,id,"CONFIRMED");}
+ @PostMapping("/internal/v1/reservations/{id}/release") ResponseEntity<?> release(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){return settle(jwt,id,"RELEASED");}
+ private ResponseEntity<?> settle(Jwt jwt,UUID id,String status){return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.settle(jwt.getClaimAsString("integrator_id"),ServiceActor.requireService(jwt),id,status));}
+}

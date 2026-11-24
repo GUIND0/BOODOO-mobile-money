@@ -1,0 +1,43 @@
+openapi: 3.1.0
+info:
+  title: Limits Service — atomic allowance reservations
+  version: 0.1.0
+paths:
+  /internal/v1/reservations:
+    post:
+      operationId: reserveAllowance
+      description: Service-only limits:reservations:write; required Idempotency-Key and reference/customerId UUIDs, positive integer amount, XOF currency.
+      security: [{serviceBearer: []}]
+      responses:
+        '201': {description: Reservation with policy snapshot, UTC buckets and execution expiry}
+        '409': {description: Limit exceeded or conflicting key/reference}
+  /internal/v1/reservations/{id}:
+    get:
+      operationId: getReservation
+      description: Service-only limits:reservations:read; live status.
+      security: [{serviceBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Reservation}
+        '404': {description: Unknown or foreign reservation}
+  /internal/v1/reservations/{id}/confirm:
+    post:
+      operationId: confirmReservation
+      description: Original service subject plus limits:reservations:settle; records successful outcome without renewing expiry.
+      security: [{serviceBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Confirmed or already confirmed}
+        '409': {description: Already released}
+  /internal/v1/reservations/{id}/release:
+    post:
+      operationId: releaseReservation
+      description: Original service subject plus limits:reservations:settle; use only after proof of no financial posting.
+      security: [{serviceBearer: []}]
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Released or already released}
+        '409': {description: Already confirmed}
+components:
+  securitySchemes:
+    serviceBearer: {type: http, scheme: bearer, bearerFormat: JWT}
