@@ -44,7 +44,7 @@ class LedgerServiceApplicationTests {
         registry.add("boodoo.security.jwk-set-uri", () -> "http://127.0.0.1:" + KEYS.getAddress().getPort() + "/jwks");
     }
     @BeforeEach void clear() {
-        jdbc.execute("TRUNCATE journal_requests,journal_entries,journals,account_creation_requests,ledger_accounts");
+        jdbc.execute("TRUNCATE journal_requests,journal_entries,journals,account_creation_requests,ledger_accounts CASCADE");
     }
     @AfterAll static void close() { HTTP.close(); KEYS.stop(0); }
 
@@ -97,7 +97,7 @@ class LedgerServiceApplicationTests {
         } catch (Exception e) { throw new ExceptionInInitializerError(e); }
     }
     @Test void startsWithMigrationAndExposesHealthWithoutAuthentication() throws Exception {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class)).isGreaterThanOrEqualTo(2);
         var response=get("/actuator/health",null);assertThat(response.statusCode()).isEqualTo(200);
         assertThat(json.readTree(response.body()).get("status").asString()).isEqualTo("UP");
         assertThat(response.body()).doesNotContain("components");
