@@ -1,10 +1,11 @@
 spring:
   application:
     name: api-gateway
-
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
 server:
   port: ${API_GATEWAY_SERVER_PORT:8080}
-
 management:
   endpoints:
     web:
@@ -13,3 +14,17 @@ management:
   endpoint:
     health:
       show-details: never
+boodoo:
+  security:
+    issuer: ${API_GATEWAY_JWT_ISSUER_URI}
+    jwk-set-uri: ${API_GATEWAY_JWT_JWK_SET_URI}
+    audience: ${API_GATEWAY_JWT_AUDIENCE:boodoo-gateway-api}
+  gateway:
+    allowed-origins: ${API_GATEWAY_ALLOWED_ORIGINS:}
+  dependencies:
+    origins:
+      customer: ${API_GATEWAY_CUSTOMER_BASE_URL:http://127.0.0.1:8084}
+      identity: ${API_GATEWAY_IDENTITY_BASE_URL:http://127.0.0.1:8086}
+      wallet: ${API_GATEWAY_WALLET_BASE_URL:http://127.0.0.1:8081}
+      transfer: ${API_GATEWAY_TRANSFER_BASE_URL:http://127.0.0.1:8082}
+      notification: ${API_GATEWAY_NOTIFICATION_BASE_URL:http://127.0.0.1:8087}
