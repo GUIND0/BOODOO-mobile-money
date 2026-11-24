@@ -9,7 +9,7 @@ COPY services/${SERVICE}/.mvn/ .mvn/
 COPY services/${SERVICE}/src/ src/
 RUN chmod 755 mvnw && ./mvnw -B -ntp -DskipTests package
 COPY deploy/Healthcheck.java /tmp/Healthcheck.java
-RUN javac -d /tmp/health /tmp/Healthcheck.java
+RUN javac --release 25 -d /tmp/health /tmp/Healthcheck.java
 FROM ${RUNTIME_IMAGE}
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /build/target/*.jar /app/service.jar

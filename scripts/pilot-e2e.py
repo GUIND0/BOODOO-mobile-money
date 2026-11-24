@@ -171,7 +171,7 @@ class Stack:
         env=os.environ.copy()
         prefix=module.removesuffix('-service').upper().replace('-','_')
         name=module.removesuffix('-service').replace('-','_')
-        env.update({prefix+'_SERVER_PORT':str(self.ports[module]),prefix+'_JWT_ISSUER_URI':self.issuer,prefix+'_JWT_JWK_SET_URI':self.issuer+'/jwks',prefix+'_DB_URL':f'jdbc:postgresql://127.0.0.1:{self.database_port}/{name}_db',prefix+'_DB_USER':name+'_user',prefix+'_DB_PASSWORD':self.database_password,'WALLET_SERVICE_TOKENS_JSON':json.dumps({'pilot-test':self.jwt('wallet-service')}),'IDENTITY_PIN_PEPPER':self.pepper,'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE':'health,info,metrics','PRICING_POLICY_VERSION':'fixture','PRICING_BASIS_POINTS':'0','PRICING_FLAT_FEE':'3','PRICING_QUOTE_TTL_SECONDS':'300','LIMITS_POLICY_VERSION':'fixture','LIMITS_PER_TRANSACTION':'1000000','LIMITS_DAILY':'10000000','LIMITS_MONTHLY':'100000000','LIMITS_RESERVATION_TTL_SECONDS':'300','RISK_POLICY_VERSION':'fixture','RISK_AUTOMATIC_AMOUNT':'1000000','RISK_EVALUATION_TTL_SECONDS':'60','RISK_BLOCKED_CUSTOMERS':'','BOODOO_RECOVERY_ENABLED':'false','NOTIFICATION_WEBHOOK_ENABLED':'true','NOTIFICATION_WEBHOOK_DESTINATIONS_JSON':json.dumps({'pilot-test':{'endpoint':self.issuer+'/receiver','version':'fixture','keyId':'fixture','secretBase64':base64.b64encode(self.webhook_secret).decode()}}),'DISTRIBUTION_ZERO_FEE_CASH_ENABLED':'true'})
+        env.update({prefix+'_SERVER_PORT':str(self.ports[module]),prefix+'_JWT_ISSUER_URI':self.issuer,prefix+'_JWT_JWK_SET_URI':self.issuer+'/jwks',prefix+'_DB_URL':f'jdbc:postgresql://127.0.0.1:{self.database_port}/{name}_db',prefix+'_DB_USER':name+'_user',prefix+'_DB_PASSWORD':self.database_password,'WALLET_SERVICE_TOKENS_JSON':json.dumps({'pilot-test':self.jwt('wallet-service')}),'SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE':'4','SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE':'1','IDENTITY_PIN_PEPPER':self.pepper,'MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE':'health,info,metrics','PRICING_POLICY_VERSION':'fixture','PRICING_BASIS_POINTS':'0','PRICING_FLAT_FEE':'3','PRICING_QUOTE_TTL_SECONDS':'300','LIMITS_POLICY_VERSION':'fixture','LIMITS_PER_TRANSACTION':'1000000','LIMITS_DAILY':'10000000','LIMITS_MONTHLY':'100000000','LIMITS_RESERVATION_TTL_SECONDS':'300','RISK_POLICY_VERSION':'fixture','RISK_AUTOMATIC_AMOUNT':'1000000','RISK_EVALUATION_TTL_SECONDS':'60','RISK_BLOCKED_CUSTOMERS':'','BOODOO_RECOVERY_ENABLED':'false','NOTIFICATION_WEBHOOK_ENABLED':'true','NOTIFICATION_WEBHOOK_DESTINATIONS_JSON':json.dumps({'pilot-test':{'endpoint':self.issuer+'/receiver','version':'fixture','keyId':'fixture','secretBase64':base64.b64encode(self.webhook_secret).decode()}}),'DISTRIBUTION_ZERO_FEE_CASH_ENABLED':'true'})
         for target in ['wallet','customer','identity','ledger','pricing','limits','risk','audit','notification','transfer']:
             destination='risk-compliance-service' if target=='risk' else target+'-service'
             env[prefix+'_'+target.upper()+'_BASE_URL']=self.url(destination)
@@ -258,6 +258,10 @@ class Stack:
             self.sql('postgres',f'CREATE DATABASE {database}_restore OWNER {name}_user')
             command(*flags,'-e','PGDATABASE='+database+'_restore','-e','RESTORE_TO_EMPTY_DATABASE=yes',self.container,'bash','/tmp/restore-db.sh','/tmp/'+database+'.dump')
             assert digest(database+'_restore')==before,'Restored rows differ for '+module
+            if module=='ledger-service':
+                rejected=subprocess.run([*flags,'-e','PGDATABASE='+database+'_restore','-e','RESTORE_TO_EMPTY_DATABASE=yes',self.container,'bash','/tmp/restore-db.sh','/tmp/'+database+'.dump'],capture_output=True)
+                assert rejected.returncode!=0 and b'not empty' in rejected.stderr,'Restore did not refuse an existing populated database'
+                assert digest(database+'_restore')==before,'Refused restore changed existing data'
             hashes[module]=len(tables)
         restored=['customer-service','identity-service','ledger-service','transfer-service']
         for module in restored:
@@ -271,6 +275,7 @@ class Stack:
         return hashes
 
     def run(self):
+        print("Starting isolated database and real services",flush=True)
         self.start_database()
         core=[m for m in MODULES if m not in ('api-gateway','transfer-service','distribution-service')]
         for module in core:
@@ -283,11 +288,13 @@ class Stack:
         for module in delayed:
             self.launch(module)
         self.healthy(delayed)
+        print("Running customer, wallet and accounting flows",flush=True)
         self.sender_customer,sender,self.sender_account=self.onboard(1)
         recipient_customer,recipient,recipient_account=self.onboard(2)
         cashier=self.jwt('cashier','operator')
         _,cash,_=self.call('distribution-service','POST','/internal/v1/cash-operations',{'walletId':sender,'direction':'IN','amount':1000,'evidence':'FIXTURE_DEPOSIT_001'},token=cashier,key='deposit',expected=(201,))
-        self.call('distribution-service','POST',f'/internal/v1/cash-operations/{cash["id"]}/approval',token=self.jwt('cash-checker','operator'))
+        _,cash_accounted,_=self.call('distribution-service','POST',f'/internal/v1/cash-operations/{cash["id"]}/approval',token=self.jwt('cash-checker','operator'))
+        self.call('ledger-service','POST',f'/internal/v1/journals/{cash_accounted["journal"]}/reversal',{'reasonCode':'UNCOORDINATED_CASH_RETURN'},token=self.jwt('refund-maker','operator'),expected=(409,))
         request={'senderWalletId':sender,'recipientWalletId':recipient,'amount':100,'maxFee':10,'currency':'XOF','pin':'739152'}
         _,pending,_=self.call('api-gateway','POST','/v1/transfers',request,key='lost-ack',expected=(202,))
         assert pending['status']=='POSTING' and self.dropped
@@ -324,6 +331,11 @@ class Stack:
         while len(self.received)<2 and time.monotonic()<deadline:
             time.sleep(.2)
         assert len(self.received)>=2,'Signed webhooks did not reach the isolated receiver'
+        empty_customer,empty_wallet,empty_account=self.onboard(3)
+        operator=self.jwt('wallet-operator','operator')
+        self.call('wallet-service','POST',f'/internal/v1/wallets/{empty_wallet}/control',{'id':str(uuid.uuid4()),'state':'FROZEN','expectedVersion':0,'reasonCode':'FIXTURE_CLOSE'},token=operator)
+        self.call('wallet-service','POST',f'/internal/v1/wallets/{empty_wallet}/control',{'id':str(uuid.uuid4()),'state':'CLOSED','expectedVersion':1,'reasonCode':'FIXTURE_CLOSE'},token=operator)
+        self.call('wallet-service','POST',f'/internal/v1/wallets/{empty_wallet}/control',{'id':str(uuid.uuid4()),'state':'OPEN','expectedVersion':2,'reasonCode':'FIXTURE_REOPEN'},token=operator,expected=(409,))
         _,balance,_=self.call('ledger-service','GET',f'/internal/v1/accounts/{self.sender_account}/balance')
         self.final_balance=balance['amountMinorUnits']
         assert self.final_balance==241, 'Principal and fees were not conserved'
@@ -340,6 +352,7 @@ class Stack:
         assert ineligible['eligible'] is False
         self.call('api-gateway','GET','/actuator/metrics',expected=(403,))
         self.call('api-gateway','GET','/actuator/metrics',token=self.jwt('metrics-collector'),expected=(200,))
+        print("Restoring every database into isolated empty targets",flush=True)
         restored=self.backup_restore()
         print(json.dumps({'result':'passed','services':len(MODULES),'realLedgerLostAcknowledgement':True,'concurrentOverspendingPrevented':True,'signedWebhookDelivery':True,'restoredDatabases':restored,'restoredPinAndTransferVerified':True}),flush=True)
 
