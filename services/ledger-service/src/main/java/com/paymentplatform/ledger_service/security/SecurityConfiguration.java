@@ -48,6 +48,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/internal/v1/accounts").hasAuthority("SCOPE_ledger:accounts:write")
                         .requestMatchers(HttpMethod.GET, "/internal/v1/accounts/*").hasAuthority("SCOPE_ledger:accounts:read")
+                        .requestMatchers(HttpMethod.POST,"/internal/v1/journal-references/*/cancel").hasAuthority("SCOPE_ledger:journals:cancel")
                         .requestMatchers(HttpMethod.POST,"/internal/v1/journals").hasAuthority("SCOPE_ledger:journals:write")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/journals/*").hasAuthority("SCOPE_ledger:journals:read")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/accounts/*/balance").hasAuthority("SCOPE_ledger:balances:read")

@@ -16,6 +16,8 @@ public class JournalService {
  public JournalService(JdbcTemplate jdbc,ObjectMapper json){this.jdbc=jdbc;this.json=json;}
  @Transactional(timeout=15)
  public Result post(String tenant,String actor,String key,JournalRequest input){
+  referenceLock(tenant,input.reference());
+  if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM journal_cancellations WHERE integrator_id=? AND reference=?)",Boolean.class,tenant,input.reference())))throw error(HttpStatus.CONFLICT,"JOURNAL_CANCELLED");
   var entries=input.entries().stream().sorted(Comparator.comparing(e->e.accountId().toString())).toList();
   if(entries.stream().map(JournalRequest.Entry::accountId).distinct().count()!=entries.size())throw error(HttpStatus.BAD_REQUEST,"DUPLICATE_ACCOUNT");
   BigInteger debit=BigInteger.ZERO,credit=BigInteger.ZERO;
@@ -40,6 +42,18 @@ public class JournalService {
   var receipt=new Receipt(id,input.reference(),"XOF",inserted.getFirst(),entries);
   jdbc.update("INSERT INTO journal_requests VALUES (?,?,?,?,?::jsonb)",tenant,key,hash,id,json.writeValueAsString(receipt));return new Result(receipt,false);
  }
+ private void referenceLock(String tenant,UUID reference){jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?,0))",(org.springframework.jdbc.core.RowCallbackHandler)r->{},"journal-reference:"+tenant+":"+reference);}
+ @Transactional(timeout=15)
+ public Cancellation cancel(String tenant,String actor,UUID reference){
+  referenceLock(tenant,reference);
+  var posted=jdbc.query("SELECT id FROM journals WHERE integrator_id=? AND reference=?",(r,n)->r.getObject(1,UUID.class),tenant,reference);
+  if(!posted.isEmpty())return new Cancellation(reference,"POSTED",posted.getFirst());
+  var owners=jdbc.query("SELECT cancelled_by FROM journal_cancellations WHERE integrator_id=? AND reference=?",(r,n)->r.getString(1),tenant,reference);
+  if(!owners.isEmpty()&&!owners.getFirst().equals(actor))throw error(HttpStatus.CONFLICT,"CANCELLATION_OWNER_CONFLICT");
+  jdbc.update("INSERT INTO journal_cancellations(integrator_id,reference,cancelled_by) VALUES (?,?,?) ON CONFLICT DO NOTHING",tenant,reference,actor);
+  return new Cancellation(reference,"CANCELLED",null);
+ }
+ public record Cancellation(UUID reference,String status,UUID journalId){}
  public Receipt get(String tenant,UUID id){return jdbc.query("SELECT snapshot::text FROM journal_requests WHERE integrator_id=? AND journal_id=?",(row,n)->json.readValue(row.getString(1),Receipt.class),tenant,id).stream().findFirst().orElseThrow(()->error(HttpStatus.NOT_FOUND,"JOURNAL_NOT_FOUND"));}
  public Receipt byReference(String tenant,UUID reference){return jdbc.query("SELECT r.snapshot::text FROM journal_requests r JOIN journals j ON j.id=r.journal_id AND j.integrator_id=r.integrator_id WHERE j.integrator_id=? AND j.reference=?",(row,n)->json.readValue(row.getString(1),Receipt.class),tenant,reference).stream().findFirst().orElseThrow(()->error(HttpStatus.NOT_FOUND,"JOURNAL_NOT_FOUND"));}
  public Balance balance(String tenant,UUID id){return jdbc.query("""

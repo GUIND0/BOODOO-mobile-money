@@ -44,7 +44,7 @@ class JournalTests {
         registry.add("boodoo.security.jwk-set-uri", () -> "http://127.0.0.1:" + KEYS.getAddress().getPort() + "/jwks");
     }
     @BeforeEach void clear() {
-        jdbc.execute("TRUNCATE journal_requests,journal_entries,journals,account_creation_requests,ledger_accounts");
+        jdbc.execute("TRUNCATE journal_cancellations,journal_requests,journal_entries,journals,account_creation_requests,ledger_accounts");
     }
     @AfterAll static void close() { HTTP.close(); KEYS.stop(0); }
 
@@ -174,6 +174,31 @@ class JournalTests {
         var report=json.readTree(get("/internal/v1/reconciliation/snapshot",token).body());
         assertThat(report.get("journalCount").asLong()).isEqualTo(1);assertThat(report.get("unbalancedJournals").asLong()).isZero();assertThat(report.get("invalidBalances").asLong()).isZero();
         assertThat(get("/internal/v1/reconciliation/snapshot",service("partner-a")).statusCode()).isEqualTo(403);
+    }
+
+    private HttpResponse<String> cancel(UUID ref,String token) throws Exception {
+        return HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:"+port+"/internal/v1/journal-references/"+ref+"/cancel")).header("Authorization","Bearer "+token).POST(HttpRequest.BodyPublishers.noBody()).build(),HttpResponse.BodyHandlers.ofString());
+    }
+    @Test void cancellationIsAnAuthoritativeBarrierAndNeverHidesPostedMoney() throws Exception {
+        UUID a=account("CASH","ASSET"),b=account("FUNDS","LIABILITY"),ref=UUID.randomUUID();String token=journalToken("partner-a");
+        String canceller=auth("partner-a","ledger:journals:cancel","wallet-service","service");
+        assertThat(cancel(ref,token).statusCode()).isEqualTo(403);
+        assertThat(cancel(ref,canceller).body()).contains("CANCELLED");
+        assertThat(cancel(ref,canceller).body()).contains("CANCELLED");
+        assertThat(journal(ref,a,b,10,"late",token).statusCode()).isEqualTo(409);
+        UUID posted=UUID.randomUUID();assertThat(journal(posted,a,b,10,"posted",token).statusCode()).isEqualTo(201);
+        assertThat(cancel(posted,canceller).body()).contains("POSTED");assertThat(balance(a)).isEqualTo(10);
+        assertThat(cancel(ref,auth("partner-b","ledger:journals:cancel","wallet-service","service")).body()).contains("CANCELLED");
+    }
+    @Test void concurrentCancellationAndPostingHaveOneFinancialOutcome() throws Exception {
+        UUID a=account("CASH","ASSET"),b=account("FUNDS","LIABILITY"),ref=UUID.randomUUID();
+        String token=journalToken("partner-a"),canceller=auth("partner-a","ledger:journals:cancel","wallet-service","service");
+        try(var pool=java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()){
+            var one=pool.submit(()->journal(ref,a,b,10,"race",token));var two=pool.submit(()->cancel(ref,canceller));
+            var posted=one.get();var cancelled=two.get();assertThat(cancelled.statusCode()).isEqualTo(200);
+            if(posted.statusCode()==201){assertThat(cancelled.body()).contains("POSTED");assertThat(balance(a)).isEqualTo(10);}
+            else{assertThat(posted.statusCode()).isEqualTo(409);assertThat(cancelled.body()).contains("CANCELLED");assertThat(balance(a)).isZero();}
+        }
     }
 
 }

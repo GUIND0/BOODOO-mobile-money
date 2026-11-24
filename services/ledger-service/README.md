@@ -61,3 +61,6 @@ Account locks are acquired in UUID order. Derived normal balances cannot become 
 Run `./mvnw -o clean verify` with Docker. Tests use real PostgreSQL 17 and ephemeral signed JWTs. They cover classifications, service-only authorization, tenant isolation, canonical replay, actor-bound keys, concurrent creation, uniqueness, database immutability and rollback/retry after an injected persistence failure.
 
 Next accounting work: linked reversal workflows, posting recovery/orchestration, external settlement reconciliation and controlled wallet/account binding. Wallet activation and transfer orchestration remain separate controlled workflows. No financial operation is implemented by this account API.
+
+### Authoritative cancellation
+`POST /internal/v1/journal-references/{reference}/cancel` requires a service JWT and `ledger:journals:cancel`. A reference lock serializes cancellation with posting. `CANCELLED` is a permanent tenant-bound tombstone; `POSTED` includes the existing journal ID and must be reconciled rather than reported as failed. A 404 reference lookup alone never proves cancellation. Retrying the same cancelling subject is safe. No automatic expiry removes barriers. Grant this privileged scope only to the orchestrator owning the reference namespace.

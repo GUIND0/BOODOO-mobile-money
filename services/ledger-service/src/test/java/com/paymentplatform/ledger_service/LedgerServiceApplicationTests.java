@@ -97,7 +97,7 @@ class LedgerServiceApplicationTests {
         } catch (Exception e) { throw new ExceptionInInitializerError(e); }
     }
     @Test void startsWithMigrationAndExposesHealthWithoutAuthentication() throws Exception {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class)).isEqualTo(3);
         var response=get("/actuator/health",null);assertThat(response.statusCode()).isEqualTo(200);
         assertThat(json.readTree(response.body()).get("status").asString()).isEqualTo("UP");
         assertThat(response.body()).doesNotContain("components");
