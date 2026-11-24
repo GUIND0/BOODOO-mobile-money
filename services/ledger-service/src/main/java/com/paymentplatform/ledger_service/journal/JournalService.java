@@ -30,7 +30,9 @@ public class JournalService {
   var accounts=jdbc.query("SELECT id,normal_balance FROM ledger_accounts WHERE integrator_id=? AND id IN ("+String.join(",",Collections.nCopies(entries.size(),"?"))+") ORDER BY id FOR UPDATE",
    (row,n)->new Account(row.getObject(1,UUID.class),row.getString(2)),args.toArray());
   if(accounts.size()!=entries.size())throw error(HttpStatus.NOT_FOUND,"ACCOUNT_NOT_FOUND");
-  for(var account:accounts){var entry=entries.stream().filter(e->e.accountId().equals(account.id())).findFirst().orElseThrow();
+  for(var account:accounts){
+   if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM account_controls WHERE integrator_id=? AND account_id=? AND state<>'OPEN')",Boolean.class,tenant,account.id())))throw error(HttpStatus.CONFLICT,"ACCOUNT_RESTRICTED");
+   var entry=entries.stream().filter(e->e.accountId().equals(account.id())).findFirst().orElseThrow();
    long before=amount(tenant,account.id(),account.normal());long delta=entry.side().name().equals(account.normal())?entry.amount():-entry.amount();
    try{if(Math.addExact(before,delta)<0)throw error(HttpStatus.CONFLICT,"INSUFFICIENT_BALANCE");}catch(ArithmeticException exception){throw error(HttpStatus.CONFLICT,"BALANCE_OVERFLOW");}}
   UUID id=UUID.randomUUID();var inserted=jdbc.query("INSERT INTO journals(id,integrator_id,reference,created_by) VALUES (?,?,?,?) ON CONFLICT DO NOTHING RETURNING created_at",

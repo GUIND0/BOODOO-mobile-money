@@ -51,6 +51,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/v1/wallets/*").hasAuthority("SCOPE_wallets:read")
                         .requestMatchers(HttpMethod.POST,"/internal/v1/wallets/*/activate").hasAuthority("SCOPE_wallets:activate")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/wallets/*/operational-state").hasAuthority("SCOPE_wallets:eligibility:read")
+                        .requestMatchers(HttpMethod.POST,"/internal/v1/wallets/*/control").hasAuthority("SCOPE_wallets:control")
                         .anyRequest().denyAll())
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable()).formLogin(form -> form.disable())
