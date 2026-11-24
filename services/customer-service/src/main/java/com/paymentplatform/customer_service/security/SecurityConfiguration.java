@@ -58,6 +58,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/internal/v1/customers/*/kyc-approval").hasAuthority("SCOPE_customers:kyc:read")
                         .requestMatchers(HttpMethod.GET, "/internal/v1/customers/*/ownership")
                         .hasAuthority("SCOPE_customers:ownership:read")
+                        .requestMatchers(HttpMethod.POST,"/internal/v1/customers/*/kyc-lifecycle").hasAuthority("SCOPE_kyc:lifecycle")
                         .anyRequest().denyAll())
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())

@@ -1,0 +1,2 @@
+CREATE TABLE kyc_lifecycle_events(integrator_id VARCHAR(64) NOT NULL,id UUID NOT NULL,customer_id UUID NOT NULL,actor_id VARCHAR(128) NOT NULL,fingerprint TEXT NOT NULL,snapshot JSONB NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(integrator_id,id),FOREIGN KEY(customer_id,integrator_id) REFERENCES customers(id,integrator_id));
+CREATE TRIGGER kyc_lifecycle_immutable BEFORE UPDATE OR DELETE ON kyc_lifecycle_events FOR EACH ROW EXECUTE FUNCTION reject_customer_history_mutation();
