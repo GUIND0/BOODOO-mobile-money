@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: Notification Service — integrator notification inbox
+  version: 0.1.0
+paths:
+  /internal/v1/notifications:
+    post:
+      operationId: createInboxNotification
+      description: Service-only notifications:write; body id, customerId, reference UUIDs and controlled template. ID is producer-bound idempotency key.
+      security: [{serviceBearer: []}]
+      responses:
+        '201': {description: Original UNREAD notification snapshot; no external delivery}
+        '409': {description: Conflicting notification ID}
+  /v1/customers/{customerId}/notifications:
+    get:
+      operationId: listNotifications
+      description: Provisioned service plus notifications:read; tenant/customer inbox with live UUID pages.
+      security: [{serviceBearer: []}]
+      parameters:
+        - {in: path, name: customerId, required: true, schema: {type: string, format: uuid}}
+        - {in: query, name: after, schema: {type: string, format: uuid}}
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        '200': {description: items and nextAfter with live acknowledgement state}
+  /v1/customers/{customerId}/notifications/{id}/acknowledgement:
+    post:
+      operationId: acknowledgeNotification
+      description: Provisioned service plus notifications:ack; idempotent first acknowledgement, not proof of external delivery.
+      security: [{serviceBearer: []}]
+      parameters:
+        - {in: path, name: customerId, required: true, schema: {type: string, format: uuid}}
+        - {in: path, name: id, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Acknowledged notification}
+        '404': {description: Unknown or foreign customer/notification combination}
+components:
+  securitySchemes:
+    serviceBearer: {type: http, scheme: bearer, bearerFormat: JWT}
