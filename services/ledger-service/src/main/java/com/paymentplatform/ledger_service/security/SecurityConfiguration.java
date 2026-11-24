@@ -41,19 +41,18 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, org.springframework.beans.factory.ObjectProvider<EndpointPolicy> policies) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(requests -> requests
+                .authorizeHttpRequests(requests -> { requests
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/internal/v1/accounts").hasAuthority("SCOPE_ledger:accounts:write")
                         .requestMatchers(HttpMethod.GET, "/internal/v1/accounts/*").hasAuthority("SCOPE_ledger:accounts:read")
-                        .requestMatchers(HttpMethod.POST,"/internal/v1/journal-references/*/cancel").hasAuthority("SCOPE_ledger:journals:cancel")
                         .requestMatchers(HttpMethod.POST,"/internal/v1/journals").hasAuthority("SCOPE_ledger:journals:write")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/journals/*").hasAuthority("SCOPE_ledger:journals:read")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/accounts/*/balance").hasAuthority("SCOPE_ledger:balances:read")
                         .requestMatchers(HttpMethod.GET,"/internal/v1/reconciliation/snapshot").hasAuthority("SCOPE_ledger:reconciliation:read")
-                        .anyRequest().denyAll())
+                        ; policies.orderedStream().forEach(policy -> policy.apply(requests)); requests.anyRequest().denyAll(); })
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())
                 .formLogin(form -> form.disable())
