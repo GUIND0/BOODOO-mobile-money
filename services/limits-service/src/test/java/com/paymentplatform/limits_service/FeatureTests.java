@@ -46,7 +46,7 @@ class FeatureTests {
         registry.add("boodoo.security.jwk-set-uri", () -> "http://127.0.0.1:" + KEYS.getAddress().getPort() + "/jwks");
     }
     @BeforeEach void clear() {
-        jdbc.execute("TRUNCATE limit_reservations");
+        jdbc.execute("TRUNCATE limit_cancellations,limit_reservations");
     }
     @AfterAll static void close() { HTTP.close(); KEYS.stop(0); }
 
@@ -119,5 +119,11 @@ class FeatureTests {
         assertThat(post("/internal/v1/reservations",body,"x",null).statusCode()).isEqualTo(401);
         assertThat(post("/internal/v1/reservations",body(UUID.randomUUID(),customer,0),"invalid",token).statusCode()).isEqualTo(400);
     }
+
+ @Test void cancellationFencesLateReservationCreation()throws Exception{
+  UUID reference=UUID.randomUUID(),customer=UUID.randomUUID();String token=service("partner-a","limits:reservations:write limits:reservations:settle");
+  var cancelled=post("/internal/v1/reservation-references/"+reference+"/cancel","",null,token);assertThat(cancelled.statusCode()).isEqualTo(200);
+  var late=post("/internal/v1/reservations",json.writeValueAsString(Map.of("reference",reference,"customerId",customer,"amount",10,"currency","XOF")),"late",token);assertThat(late.statusCode()).isEqualTo(409);assertThat(late.body()).contains("RESERVATION_CANCELLED");
+ }
 
 }

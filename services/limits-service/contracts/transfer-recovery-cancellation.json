@@ -1,0 +1,88 @@
+{
+  "paths": {
+    "/internal/v1/reservation-references/{reference}/cancel": {
+      "post": {
+        "operationId": "cancelAllowanceReference",
+        "summary": "cancelAllowanceReference",
+        "description": "Requires limits:reservations:settle. Original reserving service. Prevents delayed creation and releases only an unsettled reservation.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "reference",
+                    "status"
+                  ],
+                  "properties": {
+                    "reference": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "CANCELLED"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        }
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BOODOO limits-service transfer-recovery-cancellation",
+    "version": "0.1.0"
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
