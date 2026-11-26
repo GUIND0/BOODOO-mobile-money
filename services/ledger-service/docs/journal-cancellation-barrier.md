@@ -1,0 +1,2 @@
+### Authoritative cancellation
+`POST /internal/v1/journal-references/{reference}/cancel` requires a service JWT and `ledger:journals:cancel`. A reference lock serializes cancellation with posting. `CANCELLED` is a permanent tenant-bound tombstone; `POSTED` includes the existing journal ID and must be reconciled rather than reported as failed. A 404 reference lookup alone never proves cancellation. Retrying the same cancelling subject is safe. No automatic expiry removes barriers. Grant this privileged scope only to the orchestrator owning the reference namespace.
