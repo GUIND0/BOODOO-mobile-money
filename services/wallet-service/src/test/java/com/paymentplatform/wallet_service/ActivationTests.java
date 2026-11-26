@@ -134,6 +134,7 @@ class ActivationTests {
                 String code="W_"+key.substring("wallet-".length()).replace("-","").toUpperCase(Locale.ROOT);
                 reply(exchange,201,"{\"id\":\""+LEDGER_ACCOUNT+"\",\"code\":\""+code+"\",\"type\":\"LIABILITY\",\"currency\":\"XOF\",\"normalBalance\":\"CREDIT\"}");
             });
+            server.createContext("/internal/v1/accounts/"+LEDGER_ACCOUNT+"/control",exchange->{byte[] payload=("{\"accountId\":\""+LEDGER_ACCOUNT+"\",\"state\":\"OPEN\",\"version\":0}").getBytes(StandardCharsets.UTF_8);exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(200,payload.length);try(var out=exchange.getResponseBody()){out.write(payload);}});
             server.start(); return server;
         } catch (Exception e) { throw new ExceptionInInitializerError(e); }
     }

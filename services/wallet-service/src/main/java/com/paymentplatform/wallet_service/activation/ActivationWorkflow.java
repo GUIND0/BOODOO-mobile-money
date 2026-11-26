@@ -1,7 +1,7 @@
 package com.paymentplatform.wallet_service.activation;
 import com.paymentplatform.wallet_service.api.WalletApiException;import com.paymentplatform.wallet_service.client.DependencyClient;import org.springframework.http.HttpStatus;import org.springframework.stereotype.Service;import java.time.Instant;import java.util.*;
 @Service public class ActivationWorkflow {
- private final ActivationStore store;private final DependencyClient client;public ActivationWorkflow(ActivationStore store,DependencyClient client){this.store=store;this.client=client;}
+ private final ControlCredentials controlCredentials;private final ActivationStore store;private final DependencyClient client;public ActivationWorkflow(ActivationStore store,DependencyClient client,ControlCredentials controlCredentials){this.controlCredentials=controlCredentials;this.store=store;this.client=client;}
  public record Result(ActivationStore.Activation response,boolean replayed){}
  public record Eligibility(UUID walletId,UUID customerId,String currency,String status,UUID ledgerAccountId,boolean eligible,Instant checkedAt){}
  public Result activate(String tenant,String actor,UUID id,String key,String token){
@@ -16,8 +16,16 @@ import com.paymentplatform.wallet_service.api.WalletApiException;import com.paym
   requireFacts(wallet,token);var completion=store.finish(tenant,actor,id,key,account);return new Result(completion.response(),completion.replayed());
  }
  public Eligibility eligibility(String tenant,UUID id,String token){var wallet=store.wallet(tenant,id);boolean eligible=wallet.status().equals("ACTIVE")&&wallet.account()!=null;
-  if(eligible)try{requireFacts(wallet,token);}catch(WalletApiException exception){if(exception.status()!=HttpStatus.CONFLICT)throw exception;eligible=false;}
+  if(eligible)try{requireFacts(wallet,token);
+   var restriction=client.get("ledger","/internal/v1/accounts/"+wallet.account()+"/control",token);if(restriction.status()!=200||!wallet.account().equals(DependencyClient.uuid(restriction.body(),"accountId")))throw DependencyClient.unavailable();
+   if(!"OPEN".equals(DependencyClient.text(restriction.body(),"state")))eligible=false;}catch(WalletApiException exception){if(exception.status()!=HttpStatus.CONFLICT)throw exception;eligible=false;}
   return new Eligibility(id,wallet.customer(),wallet.currency(),wallet.status(),wallet.account(),eligible,Instant.now());
+ }
+ public Object control(String tenant,UUID id,Map<String,Object> request,String token){
+  var wallet=store.wallet(tenant,id);if(wallet.account()==null)throw conflict("WALLET_NOT_ACTIVE");
+  if("OPEN".equals(request.get("state")))requireFacts(wallet,controlCredentials.bearer(tenant));
+  var result=client.post("ledger","/internal/v1/accounts/"+wallet.account()+"/control",request,null,token);
+  if(result.status()==409)throw conflict("CONTROL_STATE_CONFLICT");if(result.status()==412)throw new WalletApiException(HttpStatus.PRECONDITION_FAILED,"CONTROL_VERSION_CONFLICT","Read the account control version before retrying.");if(result.status()!=200)throw DependencyClient.unavailable();return result.body();
  }
  private void requireFacts(ActivationStore.Wallet wallet,String token){
   var kyc=client.get("customer","/internal/v1/customers/"+wallet.customer()+"/kyc-approval",token);if(kyc.status()!=200||!wallet.customer().equals(DependencyClient.uuid(kyc.body(),"customerId")))throw DependencyClient.unavailable();
