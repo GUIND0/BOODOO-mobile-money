@@ -1,0 +1,303 @@
+{
+  "paths": {
+    "/v1/merchants": {
+      "post": {
+        "operationId": "registerMerchant",
+        "summary": "registerMerchant",
+        "description": "Requires merchants:write. Signed operator; immutable eligible wallet binding.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "walletId",
+                  "code"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "walletId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_-]{0,63}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchants/{id}": {
+      "get": {
+        "operationId": "readMerchant",
+        "summary": "readMerchant",
+        "description": "Requires merchants:read. ",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        }
+      }
+    },
+    "/internal/v1/merchants/{id}/state": {
+      "post": {
+        "operationId": "changeMerchantState",
+        "summary": "changeMerchantState",
+        "description": "Requires merchants:control. Signed operator. Suspension prevents new merchant-endpoint acceptance, not already accepted posting.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "state",
+                  "expectedVersion",
+                  "reasonCode"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "ACTIVE",
+                      "SUSPENDED"
+                    ]
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1
+                  },
+                  "reasonCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchant-payments": {
+      "post": {
+        "operationId": "createMerchantPayment",
+        "summary": "createMerchantPayment",
+        "description": "Requires payments:write. Service caller; uses durable transfer workflow. 202 remains pending; 422 is a pre-posting rejection.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "merchantId",
+                  "senderWalletId",
+                  "amount",
+                  "maxFee",
+                  "pin"
+                ],
+                "properties": {
+                  "merchantId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "senderWalletId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "amount": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1
+                  },
+                  "maxFee": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "pin": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BOODOO transfer-service merchant-payments",
+    "version": "0.1.0"
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
