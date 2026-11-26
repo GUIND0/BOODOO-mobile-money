@@ -1,0 +1,308 @@
+{
+  "paths": {
+    "/internal/v1/journals/{original}/reversal": {
+      "post": {
+        "operationId": "requestLinkedReversal",
+        "summary": "requestLinkedReversal",
+        "description": "Requires ledger:reversals:request. Signed operator; generic reversals exclude physical cash settlement. A different operator must approve.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "original",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Accepted response; inspect status/state for pending financial operations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "originalJournalId",
+                    "reasonCode",
+                    "requestedBy"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "originalJournalId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "reasonCode": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                    },
+                    "requestedBy": {
+                      "type": "string"
+                    },
+                    "approvedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "compensatingJournalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reasonCode"
+                ],
+                "properties": {
+                  "reasonCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/reversals/{id}/approval": {
+      "post": {
+        "operationId": "approveLinkedReversal",
+        "summary": "approveLinkedReversal",
+        "description": "Requires ledger:reversals:approve. Different signed operator; posts compensating journal atomically, without overdraft.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "originalJournalId",
+                    "reasonCode",
+                    "requestedBy"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "originalJournalId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "reasonCode": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                    },
+                    "requestedBy": {
+                      "type": "string"
+                    },
+                    "approvedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "compensatingJournalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        }
+      }
+    },
+    "/internal/v1/reversals/{id}": {
+      "get": {
+        "operationId": "readLinkedReversal",
+        "summary": "readLinkedReversal",
+        "description": "Requires ledger:reversals:read. Signed operator.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "originalJournalId",
+                    "reasonCode",
+                    "requestedBy"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "originalJournalId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "reasonCode": {
+                      "type": "string",
+                      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                    },
+                    "requestedBy": {
+                      "type": "string"
+                    },
+                    "approvedBy": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "compensatingJournalId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        }
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BOODOO ledger-service linked-journal-reversals",
+    "version": "0.1.0"
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}
