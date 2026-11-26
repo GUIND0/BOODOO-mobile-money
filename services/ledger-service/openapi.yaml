@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: BOODOO Ledger Accounts API
   version: 0.1.0
-  description: Service-scoped immutable accounts, balanced XOF journals and derived balances. Wallet activation and transfer orchestration are separate.
+  description: Signed ledger:post:transfer, ledger:post:settlement or ledger:post:adjustment grant required in addition to journal-write scope. Service-scoped immutable accounts, balanced XOF journals and derived balances. Wallet activation and transfer orchestration are separate.
 paths:
   /internal/v1/journal-references/{reference}/cancel:
     post:
