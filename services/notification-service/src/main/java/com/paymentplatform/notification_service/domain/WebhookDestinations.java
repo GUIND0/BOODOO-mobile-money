@@ -1,0 +1,9 @@
+package com.paymentplatform.notification_service.domain;
+import org.springframework.beans.factory.annotation.Value;import org.springframework.stereotype.Component;import tools.jackson.databind.ObjectMapper;import java.net.URI;import java.util.*;
+@Component public class WebhookDestinations {
+ public record Destination(URI endpoint,String version,String keyId,byte[] secret){public Destination{secret=secret.clone();}@Override public byte[] secret(){return secret.clone();}@Override public String toString(){return "Destination[REDACTED]";}}
+ private final Map<String,Destination> destinations=new HashMap<>();
+ public WebhookDestinations(@Value("${boodoo.webhooks.destinations-json:{}}") String config,ObjectMapper json){var root=json.readTree(config);if(!root.isObject())throw new IllegalArgumentException("Webhook configuration must be an object");for(String tenant:root.propertyNames()){var c=root.get(tenant);URI endpoint=URI.create(c.get("endpoint").asString());String version=c.get("version").asString(),key=c.get("keyId").asString();byte[] secret=Base64.getDecoder().decode(c.get("secretBase64").asString());boolean local=Set.of("127.0.0.1","localhost","[::1]").contains(endpoint.getHost());if(endpoint.getHost()==null||!("https".equals(endpoint.getScheme())||("http".equals(endpoint.getScheme())&&local))||endpoint.getUserInfo()!=null||endpoint.getQuery()!=null||endpoint.getFragment()!=null||!version.matches("[A-Za-z0-9_-]{1,64}")||!key.matches("[A-Za-z0-9_-]{1,64}")||secret.length<32)throw new IllegalArgumentException("Invalid trusted webhook destination");destinations.put(tenant,new Destination(endpoint,version,key,secret));}}
+ public Optional<Destination> get(String tenant){return Optional.ofNullable(destinations.get(tenant));}
+ @Override public String toString(){return "WebhookDestinations[REDACTED]";}
+}

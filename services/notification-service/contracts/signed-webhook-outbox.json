@@ -1,0 +1,135 @@
+{
+  "paths": {
+    "/internal/v1/webhook-deliveries/{id}": {
+      "get": {
+        "operationId": "readWebhookDelivery",
+        "summary": "readWebhookDelivery",
+        "description": "Requires notifications:delivery:read. Service identity. HTTP delivery and customer acknowledgement are separate.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        }
+      }
+    },
+    "/internal/v1/webhook-deliveries/{id}/retry": {
+      "post": {
+        "operationId": "redriveWebhookDelivery",
+        "summary": "redriveWebhookDelivery",
+        "description": "Requires notifications:delivery:retry. Signed operator; only DEAD/UNCONFIGURED deliveries, immutable payload, stable delivery identity.",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted response; inspect status/state for pending financial operations"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid authentication"
+          },
+          "403": {
+            "description": "Missing scope or signed actor authority"
+          },
+          "404": {
+            "description": "Unknown or foreign resource"
+          },
+          "409": {
+            "description": "State, identity or idempotency conflict"
+          },
+          "503": {
+            "description": "Unknown/dependency outcome; retry the same identifier"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "reasonCode"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "reasonCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BOODOO notification-service signed-webhook-outbox",
+    "version": "0.1.0"
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

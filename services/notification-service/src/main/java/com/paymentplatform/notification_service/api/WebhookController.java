@@ -1,0 +1,7 @@
+package com.paymentplatform.notification_service.api;
+import com.paymentplatform.notification_service.domain.WebhookOutbox;import com.paymentplatform.notification_service.security.ServiceActor;import jakarta.validation.Valid;import org.springframework.http.*;import org.springframework.security.core.annotation.AuthenticationPrincipal;import org.springframework.security.oauth2.jwt.Jwt;import org.springframework.web.bind.annotation.*;import java.util.UUID;
+@RestController public class WebhookController {
+ private final WebhookOutbox outbox;public WebhookController(WebhookOutbox outbox){this.outbox=outbox;}
+ @GetMapping("/internal/v1/webhook-deliveries/{id}") ResponseEntity<?> get(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id){ServiceActor.requireService(jwt);return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(outbox.get(jwt.getClaimAsString("integrator_id"),id));}
+ @PostMapping("/internal/v1/webhook-deliveries/{id}/retry") ResponseEntity<?> retry(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id,@Valid @RequestBody WebhookOutbox.Retry request){String actor=jwt.getSubject();if(!"operator".equals(jwt.getClaims().get("actor_type"))||actor==null||actor.isBlank()||actor.length()>128||!actor.equals(actor.strip())||actor.chars().anyMatch(Character::isISOControl))throw new ApiException(HttpStatus.FORBIDDEN,"OPERATOR_REQUIRED","A signed operator is required.");return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(outbox.retry(jwt.getClaimAsString("integrator_id"),actor,id,request));}
+}
