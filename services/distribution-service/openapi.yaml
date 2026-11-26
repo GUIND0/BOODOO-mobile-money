@@ -1,0 +1,15 @@
+openapi: 3.1.0
+info:
+  title: Controlled cash settlement API
+  version: 0.1.0
+paths:
+  /internal/v1/cash-operations:
+    post:
+      operationId: requestControlledCashOperation
+      security: [{serviceBearer: []}]
+      responses:
+        '201': {description: Durable cash intent; check state before approval or physical delivery}
+        '403': {description: Signed operator and scope required}
+components:
+  securitySchemes:
+    serviceBearer: {type: http, scheme: bearer, bearerFormat: JWT}

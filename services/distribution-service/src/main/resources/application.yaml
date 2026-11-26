@@ -6,10 +6,9 @@ spring:
     username: ${DISTRIBUTION_DB_USER:distribution_user}
     password: ${DISTRIBUTION_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   flyway:
     enabled: true
 
@@ -24,3 +23,21 @@ management:
   endpoint:
     health:
       show-details: never
+
+boodoo:
+  security:
+    issuer: ${DISTRIBUTION_JWT_ISSUER_URI}
+    jwk-set-uri: ${DISTRIBUTION_JWT_JWK_SET_URI}
+    audience: ${DISTRIBUTION_JWT_AUDIENCE:boodoo-distribution-api}
+
+  cash:
+    tokens-json: ${DISTRIBUTION_SERVICE_TOKENS_JSON:{}}
+    accounts-json: ${DISTRIBUTION_SETTLEMENT_ACCOUNTS_JSON:{}}
+    zero-fee-enabled: ${DISTRIBUTION_ZERO_FEE_CASH_ENABLED:false}
+  dependencies:
+    origins:
+      wallet: ${DISTRIBUTION_WALLET_BASE_URL:http://127.0.0.1:8081}
+      identity: ${DISTRIBUTION_IDENTITY_BASE_URL:http://127.0.0.1:8086}
+      ledger: ${DISTRIBUTION_LEDGER_BASE_URL:http://127.0.0.1:8083}
+      limits: ${DISTRIBUTION_LIMITS_BASE_URL:http://127.0.0.1:8089}
+      risk: ${DISTRIBUTION_RISK_BASE_URL:http://127.0.0.1:8090}
