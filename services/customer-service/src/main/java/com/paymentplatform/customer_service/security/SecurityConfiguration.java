@@ -41,10 +41,10 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, org.springframework.beans.factory.ObjectProvider<EndpointPolicy> policies) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(requests -> requests
+                .authorizeHttpRequests(requests -> { requests
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/v1/customers").hasAuthority("SCOPE_customers:read")
                         .requestMatchers(HttpMethod.POST, "/v1/customers").hasAuthority("SCOPE_customers:write")
@@ -58,7 +58,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.GET, "/internal/v1/customers/*/kyc-approval").hasAuthority("SCOPE_customers:kyc:read")
                         .requestMatchers(HttpMethod.GET, "/internal/v1/customers/*/ownership")
                         .hasAuthority("SCOPE_customers:ownership:read")
-                        .anyRequest().denyAll())
+                        ; policies.orderedStream().forEach(policy -> policy.apply(requests)); requests.anyRequest().denyAll(); })
                 .sessionManagement(sessions -> sessions.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(cache -> cache.disable())
                 .formLogin(form -> form.disable())

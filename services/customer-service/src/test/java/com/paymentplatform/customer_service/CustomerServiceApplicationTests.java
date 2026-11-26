@@ -59,7 +59,7 @@ class CustomerServiceApplicationTests {
     void clearCustomers() {
         org.mockito.Mockito.when(customerClock.instant()).thenAnswer(inv -> Instant.now());
         org.mockito.Mockito.when(customerClock.getZone()).thenReturn(java.time.ZoneOffset.UTC);
-        jdbc.execute("TRUNCATE kyc_decision_requests, kyc_decisions, kyc_submission_requests, kyc_submissions, customer_profile_updates, customer_creation_requests, customers");
+        jdbc.execute("TRUNCATE kyc_decision_requests, kyc_decisions, kyc_submission_requests, kyc_submissions, customer_profile_updates, customer_creation_requests, customers CASCADE");
     }
 
     @AfterAll
@@ -67,7 +67,7 @@ class CustomerServiceApplicationTests {
 
     @Test
     void startsWithMigratedPostgresAndReportsHealthy() throws Exception {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(4);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success", Integer.class)).isEqualTo(5);
         var response = HTTP.send(HttpRequest.newBuilder(uri("/actuator/health")).GET().build(), HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(json.readTree(response.body()).get("status").asString()).isEqualTo("UP");
